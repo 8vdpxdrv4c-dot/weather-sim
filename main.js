@@ -25,9 +25,9 @@ controls.minPolarAngle = 1.15; controls.maxPolarAngle = 1.56;
 controls.minAzimuthAngle = -0.7; controls.maxAzimuthAngle = 0.7;
 controls.update();
 
-const SUN_DIR = new THREE.Vector3(0.58, 0.27, -0.77).normalize();
+const SUN_DIR = new THREE.Vector3(0.368, 0.191, -0.910).normalize();
 // light comes from the sun's azimuth, a bit higher than the visible disc so kid shadows stay compact and readable
-const LIGHT_DIR = new THREE.Vector3(0.58, 0.62, -0.77).normalize();
+const LIGHT_DIR = new THREE.Vector3(0.291, 0.629, -0.720).normalize();
 
 // shared terrain height (identical in GLSL)
 function hgt(x, z) {
