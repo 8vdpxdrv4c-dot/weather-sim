@@ -222,9 +222,21 @@ window.__flowers = [];
   const n = flowers.length;
   const mk = (geo, mat) => { const m = new THREE.InstancedMesh(geo, mat, n); scene.add(m); window.__flowers.push(m); return m; };
   const flowerMeshes = [];
-  const petals = mk(petalGeo, new THREE.MeshLambertMaterial({ side: THREE.DoubleSide }));
-  const centers = mk(centerGeo, new THREE.MeshLambertMaterial({ side: THREE.DoubleSide }));
-  const stems = mk(stemGeo, new THREE.MeshLambertMaterial({ color: 0x5e9e2a }));
+  const swayMat = (opts, isStem) => { const m = new THREE.MeshLambertMaterial(opts);
+    m.onBeforeCompile = (sh) => { sh.uniforms.uTime = timeU; sh.uniforms.uWind = windU;
+      sh.vertexShader = 'uniform float uTime, uWind;\n' + sh.vertexShader.replace('#include <project_vertex>', `
+        vec4 mvPosition = instanceMatrix * vec4(transformed, 1.0);
+        vec3 org = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        float gust = 0.5 + 0.5*sin(uTime*1.3 - org.x*0.35 + org.z*0.12);
+        float ph = fract(sin(dot(org.xz, vec2(12.9898, 78.233))) * 43758.5453) * 6.283;
+        float k = ${isStem ? 'clamp(1.0 + position.y, 0.0, 1.0)' : '1.0'};
+        float sway = (0.03*sin(uTime*1.1 + ph) + uWind*(0.12 + 0.2*gust) + 0.04*uWind*sin(uTime*2.3 + ph)) * 0.32 * k*k;
+        mvPosition.x += sway; mvPosition.y -= sway*sway*0.6; mvPosition.z += 0.01*sin(uTime*0.9 + ph)*k;
+        mvPosition = modelViewMatrix * mvPosition; gl_Position = projectionMatrix * mvPosition;`); };
+    return m; };
+  const petals = mk(petalGeo, swayMat({ side: THREE.DoubleSide }, false));
+  const centers = mk(centerGeo, swayMat({ side: THREE.DoubleSide }, false));
+  const stems = mk(stemGeo, swayMat({ color: 0x5e9e2a }, true));
   const o = new THREE.Object3D(), col = new THREE.Color();
   flowers.forEach(([x, z, s, h], i) => {
     const y = hgt(x, z) + h;
@@ -509,7 +521,7 @@ setWeather(window.__pendingWeather || params.get('w') || 'sunny', !window.__pend
 function onResize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
   scaleU.value = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))); }
 addEventListener('resize', onResize);
-let simTime = 0, cloudOff = 0, accum = 0;
+let simTime = 0, cloudOff = 0, accum = 0, chaseW = 1; const CHASER = 3;
 function update(dt) {
   simTime += dt; timeU.value = simTime;
   const k = 1 - Math.exp(-dt * 1.4);
@@ -533,7 +545,20 @@ function update(dt) {
   for (const c of clouds) { const span = 900; let x = c.userData.base + cloudOff; x = ((x + span / 2) % span + span) % span - span / 2; c.position.x = x;
     c.material.color.copy(cur.cloudCol); c.material.opacity = (c.userData.grey ? cur.grey : 1) * cur.cloud; }
   for (const s of swayers) { const ph = s.userData.ph; s.rotation.z = Math.sin(simTime * 0.7 + ph) * 0.015 - cur.wind * (0.07 + 0.045 * Math.sin(simTime * 1.1 + ph) + 0.015 * Math.sin(simTime * 1.9 + ph * 2)); s.rotation.x = Math.sin(simTime * 0.53 + ph) * 0.01 * (1 + cur.wind * 3.5); }
+  const chaseOn = ['sunny', 'overcast', 'wind'].includes(currentName);
+  chaseW += ((chaseOn ? 1 : 0) - chaseW) * (1 - Math.exp(-dt * 1.0));
   for (const kd of kids) { const u = kd.userData, t = simTime + u.ph, w = u.w;
+    const isChaser = kd === kids[CHASER];
+    if (isChaser) {
+      if (chaseOn) { u.chaseT = (u.chaseT ?? 1) - dt;
+        if (u.chaseT <= 0) { u.chasePause = !u.chasePause; u.chaseT = u.chasePause ? 1.8 + Math.random() * 2 : 7 + Math.random() * 5; }
+        const bf = flies[0].position; const vx = kd.position.x - bf.x, vz = kd.position.z - bf.z, vd = Math.hypot(vx, vz) || 1;
+        if (u.act === 'sit' || u.act === 'lie' || u.act === 'look') u.act = 'idle';
+        u.timer = 99; u.chasing = !u.chasePause;
+        if (u.chasing && vd > 0.55) { u.act = 'walk'; u.goal = (u.goal || new THREE.Vector2()).set(bf.x + vx / vd * 0.5, bf.z + vz / vd * 0.5); }
+        else { u.act = 'idle'; u.goal = null; }
+      } else if (u.chasing !== undefined) { u.chasing = undefined; u.timer = 1; u.act = 'idle'; u.goal = null; }
+    }
     u.timer -= dt; if (u.timer <= 0 || (u.act === 'walk' && !u.goal)) setAct(kd, ACTS[Math.floor(Math.random() * ACTS.length)]);
     const ease = 1 - Math.exp(-dt * 1.5);
     w.lie ??= 0;
@@ -548,20 +573,22 @@ function update(dt) {
       if (dist < 0.06) { u.goal = null; u.act = 'idle'; u.timer = 3 + Math.random() * 4; }
       else { let want = Math.atan2(dx, dz);
         for (const o of kids) if (o !== kd) { const ox = kd.position.x - o.position.x, oz = kd.position.z - o.position.z, od = Math.hypot(ox, oz); if (od < 0.7) want = angLerp(want, Math.atan2(ox, oz), 0.6 * (0.7 - od) / 0.7 * 3); }
-        u.heading = angLerp(u.heading, want, dt * 1.4);
-        const facing = Math.max(0, Math.cos(want - u.heading)); const sp = 0.28 * w.walk * facing; moving = sp;
+        u.heading = angLerp(u.heading, want, dt * (u.chasing ? 2.0 : 1.4));
+        const facing = Math.max(0, Math.cos(want - u.heading)); const sp = (u.chasing ? 0.52 : 0.28) * w.walk * facing; moving = sp;
         kd.position.x += Math.sin(u.heading) * sp * dt; kd.position.z += Math.cos(u.heading) * sp * dt; }
-    } else u.heading = angLerp(u.heading, u.homeRy, dt * 0.8);
+    } else if (isChaser && u.chasing !== undefined) { const bf = flies[0].position; u.heading = angLerp(u.heading, Math.atan2(bf.x - kd.position.x, bf.z - kd.position.z), dt * 1.5); }
+    else u.heading = angLerp(u.heading, u.homeRy, dt * 0.8);
     kd.rotation.y = u.heading; kd.position.y = hgt(kd.position.x, kd.position.z) - 0.01;
     u.blob.position.set(kd.position.x, hgt(kd.position.x, kd.position.z) + 0.03, kd.position.z + 0.05);
     u.walkPh += dt * moving * 22; const wc = Math.sin(u.walkPh), ww = Math.min(1, moving / 0.2);
+    u.chaseArm = (u.chaseArm || 0) + (((isChaser && u.chasing !== undefined) ? 1 : 0) - (u.chaseArm || 0)) * ease;
     const ws = w.sit, wl = w.look;
     const wlie = w.lie, ang = 1.42 * wlie;
     u.legs.forEach((l, i) => { l.rotation.x = (i ? 1 : -1) * wc * 0.45 * ww - 1.45 * ws - 0.12 * wlie; l.rotation.z = (i ? 1 : -1) * 0.12 * ws; });
     u.body.position.y = -0.255 * ws - 0.07 * wlie + Math.abs(Math.cos(u.walkPh)) * 0.012 * ww;
     u.torso.scale.y = 1 + Math.sin(t * 1.6) * 0.012; u.torso.rotation.x = -0.12 * wl - 0.05 * ws * (1 - wlie) - ang;
     u.head.rotation.x = -0.42 * wl - ang * 0.9; u.head.rotation.z = Math.sin(t * 0.6) * 0.04 * (1 - wl); const hb = 0.59 + Math.sin(t * 1.6) * 0.004; u.head.position.set(0, 0.36 + hb * Math.cos(ang), -hb * Math.sin(ang));
-    const down = Math.min(1, Math.max(ww, ws, w.walk));
+    const down = Math.min(1, Math.max(ww, ws, w.walk)) * (1 - (u.chaseArm || 0));
     u.arms.forEach((a, i) => { const sx = a.userData.sx; const zr = a.userData.base * (1 - down) + sx * 0.3 * down;
       a.rotation.z = zr + sx * Math.sin(t * 1.2 + i * 1.3) * 0.1 * (1 - down);
       a.rotation.x = (a.userData.baseX || 0) * (1 - down) + (i ? -1 : 1) * wc * 0.4 * ww - 0.5 * ws; }); }
@@ -574,11 +601,14 @@ function update(dt) {
     U.g.position.set(THREE.MathUtils.lerp(0.27, 0.62, wl2), THREE.MathUtils.lerp(0.88 + by, 0.18, wl2), THREE.MathUtils.lerp(0, 0.15, wl2));
     U.g.rotation.set(0, 0, -1.25 * wl2);
     const a = u.arms[1], k = umbOn * (1 - wl2); a.rotation.z += (2.75 - a.rotation.z) * k; a.rotation.x *= 1 - k; }
-  for (const f of flies) { const u = f.userData, t = simTime * u.sp + u.ph;
-    const vis = cur.fly; f.visible = vis > 0.02; f.scale.setScalar(Math.max(vis, 0.001));
-    const x = u.cx + Math.sin(t) * u.ax, z = u.cz + Math.sin(t * 1.7) * u.az, y = u.cy + Math.sin(t * 2.3) * 0.25;
-    const nx = u.cx + Math.sin(t + 0.05) * u.ax, nz = u.cz + Math.sin((t + 0.05) * 1.7) * u.az;
-    f.position.set(x, y, z); f.rotation.y = Math.atan2(nx - x, nz - z);
+  for (const f of flies) { const u = f.userData, t = simTime * u.sp + u.ph; const chaseFly = f === flies[0];
+    const vis = chaseFly ? Math.max(cur.fly, chaseW) : cur.fly; f.visible = vis > 0.02; f.scale.setScalar(Math.max(vis, 0.001) * (chaseFly ? 1.6 : 1));
+    let x = u.cx + Math.sin(t) * u.ax, z = u.cz + Math.sin(t * 1.7) * u.az, y = u.cy + Math.sin(t * 2.3) * 0.25;
+    if (chaseFly) { const tc = simTime;
+      const cx = 2.3 * Math.sin(tc * 0.17) + 0.4 * Math.sin(tc * 0.53), cz = 0.2 + 2.2 * Math.sin(tc * 0.23 + 1.0), cy = 1.1 + 0.18 * Math.sin(tc * 1.9) + 0.08 * Math.sin(tc * 3.1);
+      x = THREE.MathUtils.lerp(x, cx, chaseW); z = THREE.MathUtils.lerp(z, cz, chaseW); y = THREE.MathUtils.lerp(y, cy, chaseW); }
+    const px = f.position.x, pz = f.position.z;
+    f.position.set(x, y, z); if (Math.hypot(x - px, z - pz) > 1e-4) f.rotation.y = angLerp(f.rotation.y, Math.atan2(x - px, z - pz), 0.15);
     const flap = Math.sin(simTime * 9 + u.ph * 3) * 0.9; u.L.rotation.z = flap; u.R.rotation.z = -flap; f.rotation.z = 0; }
   if (audioOn) { const mix = MIX[currentName]; for (const n in AUD) { const tv = mix[n] || 0; const a = AUD[n]; a.volume = Math.min(1, Math.max(0, a.volume + (tv - a.volume) * Math.min(1, dt * 1.2))); } }
 }
@@ -590,4 +620,5 @@ window.simulate = (sec, step = 1 / 30) => { for (let t = 0; t < sec; t += step) 
 window.renderOnce = () => renderer.render(scene, camera);
 if (params.has('shot')) { renderer.render(scene, camera); window.__ready = true; }
 else { renderer.setAnimationLoop(frame); window.__ready = true; }
+
 
