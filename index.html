@@ -22,7 +22,7 @@ canvas{display:block}
 <div id="bar"></div>
 <div id="hint">点击任意天气按钮开启声音 · 拖动旋转视角 · 滚轮缩放</div>
 <div id="info"><h3></h3><div></div></div>
-<div id="tools"><button id="mute">🔊 声音</button><button id="hq">画质：高</button></div>
+<div id="tools"><button id="mute">🔊 声音</button><button id="lt">⚡ 闪电：开</button><button id="hq">画质：流畅</button></div>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -103,7 +103,7 @@ renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 const scene=new THREE.Scene();
 scene.fog=new THREE.FogExp2(cur.fogC.clone(), cur.fog);
-const camera=new THREE.PerspectiveCamera(48, innerWidth/innerHeight, .1, 40000);
+const camera=new THREE.PerspectiveCamera(48, innerWidth/innerHeight, .2, 9000);
 camera.position.set(0.3,1.05,7.4);
 const controls=new OrbitControls(camera,renderer.domElement);
 controls.target.set(0,.85,0); controls.enableDamping=true; controls.minDistance=1.5; controls.maxDistance=45;
@@ -112,13 +112,13 @@ controls.maxPolarAngle=Math.PI/2-.04; if(Q.has('up')){controls.target.set(0,4,0)
 const U={uTime:{value:0},uWind:{value:.25},uWindDir:{value:new THREE.Vector2(1,.35).normalize()},uSnow:{value:0},uSnowG:{value:0},uWet:{value:0}};
 
 // ---------- sky ----------
-const sky=new Sky(); sky.scale.setScalar(24000); scene.add(sky);
+const sky=new Sky(); sky.scale.setScalar(8000); scene.add(sky);
 sky.material.uniforms.uGain={value:+(Q.get('gain')||.24)}; sky.material.uniforms.uTint={value:1};
 sky.material.fragmentShader='uniform float uGain,uTint;\n'+sky.material.fragmentShader.replace('gl_FragColor = vec4( retColor, 1.0 );','vec3 sc=retColor*uGain; float sl=dot(sc,vec3(.2126,.7152,.0722)); sc=mix(sc, mix(vec3(sl),sc,1.8)*vec3(.8,.93,1.18), uTint); gl_FragColor = vec4( sc, 1.0 );');
 const sunDir=new THREE.Vector3();
 const sun=new THREE.DirectionalLight(0xffffff,3); sun.castShadow=true;
 sun.shadow.mapSize.set(2048,2048); const sc=sun.shadow.camera; sc.left=-22;sc.right=22;sc.top=22;sc.bottom=-22;sc.near=1;sc.far=120;
-sun.shadow.bias=-.0004; sun.shadow.normalBias=.03; sun.shadow.radius=6; sun.shadow.intensity=.75;
+sun.shadow.bias=-.0006; sun.shadow.normalBias=.05; sun.shadow.radius=6; sun.shadow.intensity=.75;
 scene.add(sun,sun.target);
 const hemi=new THREE.HemisphereLight(0xcfe3ff,0x4a5a2a,.5); scene.add(hemi);
 
@@ -146,7 +146,7 @@ const cloudMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,side:
   if(d.y<0.){col=uFogC;a=1.;}
   col+=uFlash*vec3(1.6,1.7,2.)*(.4+n);
   gl_FragColor=vec4(col,a);}`});
-const cloudDome=new THREE.Mesh(new THREE.SphereGeometry(9000,48,24),cloudMat); cloudDome.renderOrder=-1; scene.add(cloudDome);
+const cloudDome=new THREE.Mesh(new THREE.SphereGeometry(3500,48,24),cloudMat); cloudDome.renderOrder=-1; scene.add(cloudDome);
 
 // ---------- material patcher: wind sway, snow accumulation, wet ground ----------
 function patch(mat,kind){
@@ -389,31 +389,26 @@ function setupMixKids(protos, kidsRoot){
   const root=new THREE.Group(); root.add(inner); scene.add(root);
   const bones={}; g.traverse(o=>{ if(o.isBone){ const n=o.name.replace(/^mixamorig:?/,''); bones[n]={b:o,q:o.quaternion.clone()}; }});
   const u=new THREE.Group(); u.add(umbP[i%3].clone(true)); u.position.set(-.2,.6,.12); u.rotation.set(-.1,0,.16); root.add(u); u.traverse(o=>{if(o.isMesh)o.castShadow=true;});
-  mixKids.push({root,bones,umb:u,x,z,ph:i*1.37,h});
+  mixKids.push({root,bones,umb:u,x,z,ph:i*1.37,h,face:Math.atan2(0.3-x,7.4-z)*.6});
  });
  window.__mix=mixKids;
 }
 function setB(K,n,x,y,z){ const B=K.bones[n]; if(!B) return; _q.setFromEuler(_e.set(x,y,z)); B.b.quaternion.copy(B.q).multiply(_q); }
 function animMixKids(dt,t){
  umbAmt+=((curName==='rain'?1:0)-umbAmt)*Math.min(1,dt*2);
- const w=cur.wind; const MX=window.MIXAX||{leg:-1,arm:1,armAx:'z'};
- const play = curName==='sunny'||curName==='wind'||curName==='snow' ? 1 : curName==='rain' ? .15 : .55;
+ if(umbAmt>.999) umbAmt=1; if(umbAmt<.001) umbAmt=0;
  mixKids.forEach((K,i)=>{
-  const ph=t*7.5*(.8+.4*play)+K.ph; const run=play*(1-umbAmt*.85);
-  K.root.position.set(K.x+Math.sin(t*.4+i)*.3, Math.abs(Math.cos(ph))*.05*run, K.z+Math.sin(t*.35+i*1.7)*.8*run);
-  K.root.rotation.set(0,Math.sin(t*.4+i)*.15,-Math.min(w,1.8)*.05);
-  const sw=Math.sin(ph)*.7*run;
-  setB(K,'LeftUpLeg',sw*MX.leg,0,0); setB(K,'RightUpLeg',-sw*MX.leg,0,0);
-  setB(K,'LeftLeg',Math.max(0,-sw)*1.0*-MX.leg,0,0); setB(K,'RightLeg',Math.max(0,sw)*1.0*-MX.leg,0,0);
-  // T-pose arms: raise into a happy V when running, drop to sides when calm
-  const up=THREE.MathUtils.lerp(-1.2, .7+Math.sin(ph*.5+i)*.2, run);
-  const ur=THREE.MathUtils.lerp(up, 1.0, umbAmt);
-  const a=(v)=>MX.armAx==='z'?[0,0,v]:MX.armAx==='x'?[v,0,0]:[0,v,0];
-  setB(K,'LeftArm',-up,0,0); setB(K,'RightArm',-ur,0,0);
-  if(umbAmt>.01) setB(K,'RightForeArm',0,0,0);
-  setB(K,'Spine',.12*run+Math.min(w,1.8)*.06,0,0); setB(K,'Head',0,Math.sin(t*.6+K.ph)*.3,0);
+  // fixed standing pose on the ground, facing roughly toward the camera
+  K.root.position.set(K.x,0,K.z); K.root.rotation.set(0,K.face,0);
+  for(const n of ['LeftUpLeg','RightUpLeg','LeftLeg','RightLeg','Spine','Head','RightForeArm','LeftForeArm']) setB(K,n,0,0,0);
+  // relax arms down from the T-pose (x+ lowers on these Mixamo rigs); right arm lifts to hold the umbrella in rain
+  setB(K,'LeftArm',1.2,0,.12); setB(K,'LeftForeArm',0,0,0);
+  setB(K,'RightArm',THREE.MathUtils.lerp(1.2,-.15,umbAmt),0,-.12*(1-umbAmt));
+  setB(K,'RightForeArm',0,0,0);
   K.umb.scale.setScalar(Math.max(umbAmt,1e-4)); K.umb.visible=umbAmt>.02;
-  if(K.umb.visible&&K.bones.RightHand){ K.root.updateMatrixWorld(true); const hp=K.bones.RightHand.b.getWorldPosition(new THREE.Vector3()); K.root.worldToLocal(hp); K.umb.position.set(hp.x,hp.y-.3*umbAmt,hp.z); K.umb.rotation.set(0,0,0); }
+  if(K.umb.visible&&K.bones.RightHand&&!K.umbFixed){ K.root.updateMatrixWorld(true); const hp=K.bones.RightHand.b.getWorldPosition(new THREE.Vector3()); K.root.worldToLocal(hp);
+    K.umbPos=new THREE.Vector3(hp.x,hp.y-.3,hp.z); if(umbAmt>=1) K.umbFixed=true; }
+  if(K.umbPos){ K.umb.position.copy(K.umbPos); K.umb.rotation.set(0,0,0); }
  });
 }
 
@@ -446,21 +441,12 @@ function setupGirl(g, kidsRoot){
 }
 function setBone(n,x,y,z){ const B=girl.bones[n]; if(!B) return; _q.setFromEuler(_e.set(x,y,z)); B.b.quaternion.copy(B.q).multiply(_q); }
 function animGirl(dt,t){
- if(!girl) return; const w=cur.wind;
- const play = curName==='sunny'||curName==='wind'||curName==='snow' ? 1 : curName==='rain' ? .15 : .55;
- const ph=t*7.5*(.8+.4*play)+girl.ph; const run=play*(1-umbAmt*.85);
- girl.root.position.set(-.8+Math.sin(t*.4+5)*.3, Math.abs(Math.cos(ph))*.06*run, 3.7+Math.sin(t*.35+3)*.7*run);
- girl.root.rotation.y=Math.sin(t*.4+5)*.15;
- const sw=Math.sin(ph)*.7*run, up=(2.3+Math.sin(ph*.5)*.25)*run;
- const G=window.GIRLAX||{leg:'x',arm:'x',sL:1,sA:1};
- const ax=(a,v)=>a==='x'?[v,0,0]:a==='y'?[0,v,0]:[0,0,v];
- setBone('l_thigh',...ax(G.leg,sw*G.sL)); setBone('r_thigh',...ax(G.leg,-sw*G.sL));
- setBone('l_knee',...ax(G.leg,-Math.max(0,-sw)*.9*G.sL)); setBone('r_knee',...ax(G.leg,-Math.max(0,sw)*.9*G.sL));
- const ur=THREE.MathUtils.lerp(up,2.2,umbAmt);
- setBone('l_shoulder',...ax(G.arm,up*G.sA)); setBone('r_shoulder',...ax(G.arm,-ur*G.sA));
- setBone('spine',.1*run*(G.sp||1)+Math.min(w,1.8)*.06,0,0); setBone('neck',0,Math.sin(t*.6)*.3,0);
+ if(!girl) return;
+ // static standing pose: no running, bobbing, drifting or wind lean
+ girl.root.position.set(-.8,0,3.7); girl.root.rotation.set(0,.1,0);
+ for(const n of ['l_thigh','r_thigh','l_knee','r_knee','spine','neck']) setBone(n,0,0,0);
+ setBone('l_shoulder',.12,0,0); setBone('r_shoulder',-THREE.MathUtils.lerp(-.12,2.0,umbAmt),0,0);
  girl.umb.scale.setScalar(Math.max(umbAmt,1e-4)); girl.umb.visible=umbAmt>.02;
- girl.root.rotation.x=0; girl.root.rotation.z=-Math.min(w,1.8)*.05;
 }
 
 const SPOTS=[[-1.9,2.3],[0.1,3.0],[2.1,2.2],[-1.0,-1.2],[1.3,-.8]];
@@ -521,7 +507,7 @@ window.setWeather=setWeather; window.__audioTest=async()=>{await initAudio(); re
 const composer=new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene,camera));
 const gtao=new GTAOPass(scene,camera,innerWidth,innerHeight); gtao.updateGtaoMaterial({radius:.5,distanceExponent:1.5,thickness:1,scale:1.2,samples:12}); gtao.blendIntensity=.9;
-composer.addPass(gtao); const FX=[]; { const orig=gtao.render.bind(gtao); gtao.render=(...a)=>{const v=FX.map(o=>o.visible); FX.forEach(o=>o.visible=false); orig(...a); FX.forEach((o,i)=>o.visible=v[i]);}; } if(Q.has('noao'))gtao.enabled=false;
+composer.addPass(gtao); const FX=[]; { const orig=gtao.render.bind(gtao); gtao.render=(...a)=>{const v=FX.map(o=>o.visible); FX.forEach(o=>o.visible=false); orig(...a); FX.forEach((o,i)=>o.visible=v[i]);}; } 
 const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth/2,innerHeight/2),.3,.55,.85); composer.addPass(bloom);
 const godrays=new ShaderPass({uniforms:{tDiffuse:{value:null},uSun:{value:new THREE.Vector2(.8,.9)},uAmt:{value:0}},
  vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
@@ -542,7 +528,8 @@ const grade=new ShaderPass({uniforms:{tDiffuse:{value:null},uSat:{value:1.2},uWa
   vec2 q=vUv-.5; c*=1.-dot(q,q)*.25;
   gl_FragColor=vec4(clamp(c,0.,1.),1.);}`});
 composer.addPass(grade);
-let hq=true; document.getElementById('hq').onclick=e=>{hq=!hq; gtao.enabled=hq; renderer.setPixelRatio(hq?Math.min(devicePixelRatio,1.5):1); onResize(); e.target.textContent='画质：'+(hq?'高':'流畅');};
+let lightningOn=true; document.getElementById('lt').onclick=e=>{lightningOn=!lightningOn; e.target.textContent='⚡ 闪电：'+(lightningOn?'开':'关'); if(!lightningOn){flash=0;}};
+let hq=false; gtao.enabled=false; document.getElementById('hq').onclick=e=>{hq=!hq; gtao.enabled=hq; renderer.setPixelRatio(hq?Math.min(devicePixelRatio,1.5):1); onResize(); e.target.textContent='画质：'+(hq?'高':'流畅');};
 function onResize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);}
 addEventListener('resize',onResize);
 
@@ -583,8 +570,8 @@ function frame(fixed){
  sunDir.setFromSphericalCoords(1,phi,th);
  const su=sky.material.uniforms; su.sunPosition.value.copy(sunDir); su.turbidity.value=cur.turb; su.rayleigh.value=cur.ray; su.mieCoefficient.value=cur.mie; su.mieDirectionalG.value=.8; su.uTint.value=1.-cur.gray;
  // lightning
- if(curName==='rain'&&t>nextBolt){spawnBolt(); nextBolt=t+5+Math.random()*8;}
- flash=Math.max(0,flash-dt*3.5); const fl=flash>0?flash*(.6+.4*Math.sin(t*90)):0;
+ if(curName==='rain'&&lightningOn&&t>nextBolt){spawnBolt(); nextBolt=t+20+Math.random()*20;}
+ if(curName!=='rain'){flash=0; if(bolt)bolt.visible=false;} flash=Math.max(0,flash-dt*1.2); const fl=flash*.35;
  if(bolt) bolt.visible=flash>.45; boltMat.opacity=Math.min(1,flash*1.5);
  // clouds
  windOff.x+=dt*.004*cur.cloudSpd*U.uWindDir.value.x*6; windOff.y+=dt*.004*cur.cloudSpd*U.uWindDir.value.y*6;
@@ -592,14 +579,14 @@ function frame(fixed){
  cu.uBright.value=.62+cur.sun*.14; cu.uSunCol.value.copy(cur.light);
  cloudDome.position.copy(camera.position); if(Q.has('noclouds'))cloudDome.visible=false;
  // lights
- sun.position.copy(sunDir).multiplyScalar(60).add(controls.target); sun.target.position.copy(controls.target);
- sun.intensity=cur.sun; sun.color.copy(cur.light); sun.castShadow=cur.sun>.3;
+ sun.position.copy(sunDir).multiplyScalar(60); sun.target.position.set(0,0,0);
+ sun.intensity=cur.sun; sun.color.copy(cur.light); sun.castShadow=true;
  hemi.intensity=cur.hemi+fl*3; hemi.color.copy(cur.light).lerp(tmpC.set(0xcfe4ff),.4); hemi.groundColor.set(0x8fae55); 
  scene.environmentIntensity=cur.env+fl*1.5;
  scene.fog.color.copy(cur.fogC).multiplyScalar(1+fl*.6); scene.fog.density=cur.fog;
  renderer.toneMappingExposure=cur.exp; grade.uniforms.uSat.value=cur.sat; grade.uniforms.uWarm.value=cur.warm; grade.uniforms.uLift.value=cur.lift;
  { const sp=sunDir.clone().multiplyScalar(5000).add(camera.position).project(camera); godrays.uniforms.uSun.value.set(sp.x*.5+.5,sp.y*.5+.5);
-   godrays.uniforms.uAmt.value=sp.z<1?Math.max(0,(cur.sun-1)/4.)*(1-cur.gray):0; } bloom.strength=cur.bloom+fl*.6;
+   godrays.uniforms.uAmt.value=sp.z<1?Math.max(0,(cur.sun-1)/4.)*(1-cur.gray):0; } bloom.strength=cur.bloom;
  // particles
  const c=controls.target; const fd=cur.fog;
  rain.material.uniforms.uAmt.value=cur.rain; rain.material.uniforms.uC.value.copy(c); rain.material.uniforms.uCol.value.setRGB(.55,.6,.66).multiplyScalar(1+fl*2); rain.material.uniforms.uFogC.value.copy(cur.fogC); rain.material.uniforms.uFogD.value=fd; rain.visible=cur.rain>.01;
@@ -609,6 +596,6 @@ function frame(fixed){
  animMixKids(dt,t); animGirl(dt,t); animButterflies(t,cur.bfly);
  controls.update();
  composer.render();
- if(!SHOT&&!autoChecked&&t>3){fpsAcc+=dt;fpsN++; if(fpsN>=90){autoChecked=true; if(fpsAcc/fpsN>1/28&&hq){document.getElementById('hq').click();}}}
+ 
 }
 </script></body></html>
