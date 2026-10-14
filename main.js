@@ -8,7 +8,9 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.domElement.style.filter = 'saturate(1.12)';
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -23,7 +25,9 @@ controls.minPolarAngle = 1.15; controls.maxPolarAngle = 1.56;
 controls.minAzimuthAngle = -0.7; controls.maxAzimuthAngle = 0.7;
 controls.update();
 
-const SUN_DIR = new THREE.Vector3(0.55, 0.42, -0.72).normalize();
+const SUN_DIR = new THREE.Vector3(0.58, 0.27, -0.77).normalize();
+// light comes from the sun's azimuth, a bit higher than the visible disc so kid shadows stay compact and readable
+const LIGHT_DIR = new THREE.Vector3(0.58, 0.62, -0.77).normalize();
 
 // shared terrain height (identical in GLSL)
 function hgt(x, z) {
@@ -67,7 +71,16 @@ let target = PRESETS.sunny, currentName = 'sunny';
 
 // ---------- lights ----------
 const hemi = new THREE.HemisphereLight(0xd6ecff, 0x9cbf55, 1.35); scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff0d0, 2.6); sun.position.copy(SUN_DIR).multiplyScalar(50); scene.add(sun);
+const sun = new THREE.DirectionalLight(0xfff0d0, 2.6); sun.position.set(-1.5, 0, 2).addScaledVector(LIGHT_DIR, 30); sun.target.position.set(-1.5, 0, 2); scene.add(sun, sun.target);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -7, right: 7, top: 7, bottom: -7, near: 10, far: 50 }); sun.shadow.camera.updateProjectionMatrix();
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
+// visible sun disc (sprite, no post-processing)
+const sunTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128); gr.addColorStop(0, 'rgba(255,255,250,1)'); gr.addColorStop(0.1, 'rgba(255,253,240,1)'); gr.addColorStop(0.15, 'rgba(255,244,200,0.8)'); gr.addColorStop(0.4, 'rgba(255,225,150,0.22)'); gr.addColorStop(1, 'rgba(255,220,140,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 256, 256); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTex, fog: false, depthWrite: false, transparent: true, toneMapped: false }));
+sunSprite.position.copy(SUN_DIR).multiplyScalar(500); sunSprite.scale.setScalar(230); sunSprite.renderOrder = -6; scene.add(sunSprite);
 const fill = new THREE.DirectionalLight(0xfff4e6, 1.3); fill.position.set(-2, 4, 8); scene.add(fill);
 
 // ---------- sky ----------
@@ -125,14 +138,14 @@ const groundGeo = new THREE.PlaneGeometry(500, 500, 220, 220); groundGeo.rotateX
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), z = p.getZ(i); p.setY(i, hgt(x, z));
     const v = 0.5 + 0.5 * Math.sin(x * 0.23 + Math.sin(z * 0.17) * 2) * Math.cos(z * 0.19);
-    c.setHex(0x8cc436).lerp(C(0xb4d84a), v * 0.6); col.push(c.r, c.g, c.b);
+    c.setHex(0x86c832).lerp(C(0xb2de46), v * 0.6); col.push(c.r, c.g, c.b);
   }
   groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); groundGeo.computeVertexNormals();
 }
 const snowCover = { value: 0 };
 const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 groundMat.onBeforeCompile = (s) => { s.uniforms.uSnow = snowCover; s.fragmentShader = 'uniform float uSnow;\n' + s.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92,0.94,0.97), uSnow*0.85);'); };
-scene.add(new THREE.Mesh(groundGeo, groundMat));
+{ const gm = new THREE.Mesh(groundGeo, groundMat); gm.receiveShadow = true; scene.add(gm); }
 const snowLayerU = { value: 0 };
 const snowLayer = (() => {
   const g = new THREE.PlaneGeometry(90, 70, 260, 200); g.rotateX(-Math.PI / 2); g.translate(0, 0, -25);
@@ -143,9 +156,10 @@ const snowLayer = (() => {
   g.computeVertexNormals(); g.setAttribute('aLayer', new THREE.BufferAttribute(lay, 1));
   const m = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xc8ced8, emissiveIntensity: 0.42 });
   m.onBeforeCompile = (sh) => { sh.uniforms.uCov = snowLayerU; sh.uniforms.uKids = kidPosU; sh.vertexShader = 'attribute float aLayer; uniform float uCov; uniform vec2 uKids[5];\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n float kd = 99.0; for(int i=0;i<5;i++) kd = min(kd, distance(transformed.xz, uKids[i]));\n float keep = uCov * mix(0.15, 1.0, smoothstep(0.25, 0.8, kd));\n transformed.y -= aLayer * (1.0 - keep) + 0.03*(1.0-uCov);'); };
-  const mesh = new THREE.Mesh(g, m); mesh.visible = false; scene.add(mesh); return mesh; })();
+  const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.visible = false; scene.add(mesh); return mesh; })();
 
 // ---------- grass (instanced shader blades) ----------
+const kidHU = { value: [1, 1, 1, 1, 1] }, shadowU = { value: 1 };
 const windU = { value: 0.1 }, timeU = { value: 0 }, kidPosU = { value: [0,1,2,3,4].map(() => new THREE.Vector2(99, 99)) }, buryU = { value: 0 };
 const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new THREE.Color() } };
 {
@@ -162,13 +176,18 @@ const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new 
   g.instanceCount = vr.length;
   const mat = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
-    uniforms: { uTime: timeU, uWind: windU, uSnow: snowCover, uKids: kidPosU, uBury: buryU, uBase: { value: C(0x4f9a1c) }, uTip: { value: C(0xb6e04e) }, ...lightU, ...fogUniforms },
-    vertexShader: `attribute vec4 aOff; attribute float aVar; uniform float uTime,uWind,uBury; uniform vec2 uKids[5]; varying float vT,vVar,vDist; ${GLSL_H}
+    uniforms: { uTime: timeU, uWind: windU, uSnow: snowCover, uKids: kidPosU, uKidH: kidHU, uShadow: shadowU, uSunXZ: { value: new THREE.Vector2(-LIGHT_DIR.x, -LIGHT_DIR.z).normalize() }, uTanE: { value: LIGHT_DIR.y / Math.hypot(LIGHT_DIR.x, LIGHT_DIR.z) }, uBury: buryU, uBase: { value: C(0x4f9a1c) }, uTip: { value: C(0xb6e04e) }, ...lightU, ...fogUniforms },
+    vertexShader: `attribute vec4 aOff; attribute float aVar; uniform float uTime,uWind,uBury,uKidH[5],uShadow,uTanE; uniform vec2 uKids[5],uSunXZ; varying float vSh; varying float vT,vVar,vDist; ${GLSL_H}
     void main(){ vec2 b = aOff.xy; float gy = hgt(b); vec3 root = vec3(b.x,gy,b.y);
       float d = distance(root, cameraPosition); float fade = 1.0 - smoothstep(24.0,36.0,d);
       float s = sin(aOff.z), c = cos(aOff.z); float hs = aOff.w*fade*(0.85+0.3*aVar);
-      float kd = 99.0; for(int i=0;i<5;i++) kd = min(kd, distance(b, uKids[i]));
-      hs *= mix(0.3, 1.0, smoothstep(0.35, 0.9, kd)) * (1.0 - 0.9*uBury);
+      float kd = 99.0; float sh = 0.0; vec2 perp = vec2(-uSunXZ.y, uSunXZ.x);
+      for(int i=0;i<5;i++){ vec2 dd = b - uKids[i]; kd = min(kd, length(dd));
+        float L = uKidH[i] / uTanE; float al = dot(dd, uSunXZ), pp = abs(dot(dd, perp));
+        float wdt = 0.36 + 0.1*step(1.6, uKidH[i]) * smoothstep(0.6, 1.0, al / L) * 2.0;
+        sh = max(sh, smoothstep(-0.1, 0.25, al) * (1.0 - smoothstep(L*0.8, L*1.05, al)) * (1.0 - smoothstep(wdt*0.6, wdt, pp))); }
+      vSh = sh * uShadow;
+      hs *= (1.0 - 0.55*sh*uShadow) * mix(0.3, 1.0, smoothstep(0.35, 0.9, kd)) * (1.0 - 0.9*uBury);
       vec3 lp = vec3(position.x*c, position.y*hs, position.x*s);
       float t = position.y; float bend = t*t*hs;
       float gust = 0.5+0.5*sin(uTime*1.3 - b.x*0.35 + b.y*0.12);
@@ -176,10 +195,11 @@ const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new 
       float wob = sin(uTime*1.1 + aVar*6.283)*(0.05 + 0.08*uWind);
       lp.x += (sway + wob)*bend; lp.z += wob*0.5*bend; lp.y -= sway*sway*0.25*bend;
       vec4 mv = viewMatrix*vec4(root+lp,1.0); vDist = -mv.z; vT = t; vVar = aVar; gl_Position = projectionMatrix*mv; }`,
-    fragmentShader: `uniform vec3 uBase,uTip,uSunCol; uniform float uAmb,uSunI,uSnow; varying float vT,vVar,vDist; ${GLSL_FOG}
+    fragmentShader: `uniform vec3 uBase,uTip,uSunCol; uniform float uAmb,uSunI,uSnow; varying float vT,vVar,vDist,vSh; ${GLSL_FOG}
     void main(){ vec3 c = mix(uBase,uTip,smoothstep(0.0,1.0,vT)) * (0.82+0.36*vVar);
       c *= uAmb*0.42 + uSunCol*uSunI*0.26*(0.6+0.4*vT);
       c = mix(c, vec3(0.93,0.95,0.98)*(uAmb*0.7+uSunI*0.1), uSnow*smoothstep(0.35,1.0,vT)*0.85);
+      c = mix(c, min(c, vec3(0.85))*vec3(0.26,0.36,0.32), vSh);
       gl_FragColor = vec4(applyFog(c,vDist),1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
@@ -247,7 +267,7 @@ function makeTree(x, z, s, detail = true) {
   if (detail) blob(x, z, 2.4 * s);
   return g;
 }
-makeTree(-7.2, 0.5, 1.25); makeTree(-10.5, -5, 1.1); makeTree(8.5, -6.5, 1.15); makeTree(11.5, -2, 0.95);
+makeTree(-7.2, 0.5, 1.25); makeTree(-10.5, -5, 1.1); makeTree(9.5, -3, 1.0); makeTree(13, -9, 1.1);
 for (let i = 0; i < 46; i++) { const x = -70 + i * 3.1 + rr(-1, 1); if (Math.abs(x) < 6 && rnd() < 0.5) continue; makeTree(x, rr(-38, -46), rr(0.75, 1.3), false); }
 for (let i = 0; i < 20; i++) { makeTree(rr(-60, 60), rr(-52, -62), rr(1.0, 1.5), false); }
 
@@ -326,7 +346,7 @@ function makeKid(o) {
   if (o.bob) { const back = sph(0.27, HAIR, 32, 20); back.position.set(0, -0.08, -0.08); back.scale.set(1.1, 0.9, 0.95); head.add(back); }
   if (o.braids) for (const sx of [-1, 1]) for (let j = 0; j < 4; j++) { const b = sph(0.055 - j * 0.004, HAIR, 12, 10); b.position.set(sx * (0.25 + j * 0.01), -0.12 - j * 0.085, -0.08); head.add(b); if (j === 0) { const bow = sph(0.03, 0xff7aa8, 10, 8); bow.position.set(sx * 0.27, -0.06, -0.06); head.add(bow); } }
   if (o.pigtails) for (const sx of [-1, 1]) { const p = sph(0.085, HAIR, 16, 12); p.position.set(sx * 0.3, 0.08, -0.06); p.scale.set(0.8, 1.2, 0.8); p.rotation.z = sx * -0.5; head.add(p); const bow = sph(0.032, 0xff7aa8, 10, 8); bow.position.set(sx * 0.26, 0.16, -0.03); head.add(bow); }
-  k.traverse(m => { if (m.isMesh) m.castShadow = false; });
+  k.traverse(m => { if (m.isMesh && !m.material.transparent) m.castShadow = true; });
   k.userData = { torso, head, arms, legs, body, ph: rnd() * 6 };
   return k;
 }
@@ -351,7 +371,7 @@ kids.forEach((kd, i) => {
   const tip = sph(0.03, 0xffffff, 8, 6); tip.position.y = 0.22; can.add(tip);
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.66, 6), M(0x8a6a50)); shaft.position.y = 0.31; g.add(shaft);
   const handle = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 12, Math.PI), M(0x8a6a50)); handle.rotation.z = Math.PI; handle.position.set(0.04, 0, 0); g.add(handle);
-  g.visible = false; kd.add(g); kd.userData.umb = { g, can };
+  g.traverse(m => { if (m.isMesh) m.castShadow = true; }); g.visible = false; kd.add(g); kd.userData.umb = { g, can };
 });
 const ACTS = ['idle', 'walk', 'walk', 'walk', 'walk', 'sit', 'lie', 'lie', 'look', 'look'];
 function pickGoal(kd) { const u = kd.userData;
@@ -502,7 +522,11 @@ function update(dt) {
   windU.value = cur.wind; snowCover.value = cur.cover;
   accum += ((target.cover || 0) - accum) * (1 - Math.exp(-dt * (target.cover ? 0.45 : 0.9)));
   snowLayerU.value = accum; snowLayer.visible = accum > 0.005; for (const f of window.__flowers) f.position.y = -0.32 * accum; buryU.value = accum; leafSnowU.value = accum;
-  kids.forEach((kd, i) => kidPosU.value[i].set(kd.position.x, kd.position.z));
+  kids.forEach((kd, i) => { kidPosU.value[i].set(kd.position.x, kd.position.z); const w = kd.userData.w;
+    kidHU.value[i] = (1.45 - 0.55 * (w.sit || 0) - 0.55 * (w.lie || 0)) * 1.0 + 0.45 * THREE.MathUtils.smoothstep(cur.rain, 0.05, 0.6) * (1 - (w.lie || 0)); });
+  const shStr = THREE.MathUtils.clamp((cur.sun - 0.4) / 2.0, 0, 1) * (1 - THREE.MathUtils.clamp(cur.fogD / 0.06, 0, 1) * 0.8);
+  shadowU.value = shStr; sun.shadow.intensity = shStr; blobMat.opacity = 1 - 0.45 * shStr;
+  sunSprite.material.opacity = THREE.MathUtils.clamp(cur.glow, 0, 1);
   rainU.uOpacity.value = cur.rain; rainU.uUmb.value = THREE.MathUtils.smoothstep(cur.rain, 0.3, 0.9); snowU.uOpacity.value = cur.snow; windLineU.uOpacity.value = cur.lines;
   leafMats.forEach((m, i) => m.color.copy(leafBase[i]).lerp(C(0xe6eef0), accum * 0.2));
   cloudOff += dt * cur.cloudSpd;
@@ -565,3 +589,4 @@ window.simulate = (sec, step = 1 / 30) => { for (let t = 0; t < sec; t += step) 
 window.renderOnce = () => renderer.render(scene, camera);
 if (params.has('shot')) { renderer.render(scene, camera); window.__ready = true; }
 else { renderer.setAnimationLoop(frame); window.__ready = true; }
+
