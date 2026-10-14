@@ -7,7 +7,7 @@ const { chromium } = require('/workspace/wr_tools/node_modules/playwright');
  await p.goto(base+'?shot=1');
  await p.waitForFunction('window.__ready===true',null,{timeout:240000});
  const list=(process.argv[2]||'sunny,overcast,rain,snow,fog,wind').split(',');
- for(const w of list){ await p.evaluate(w=>window.setWeather(w,true),w); await p.evaluate(([w,ST])=>{ if(w==='rain'){kidAct(0,'lie');kidAct(2,'sit');kidAct(1,'walk');} window.simulate(w==='snow'||w==='rain'?9:(w==='sunny'?ST:3)); },[w,+(process.env.ST||6)]);
+ for(const w of list){ await p.evaluate(w=>window.setWeather(w,true),w); await p.evaluate(([w,ST])=>{ if(w==='rain'){kidAct(0,'sit');kidAct(2,'walk');kidAct(1,'walk');} window.simulate(w==='snow'||w==='rain'?9:(w==='sunny'?ST:3)); },[w,+(process.env.ST||6)]);
    await p.screenshot({path:`/workspace/weather-v2/screenshots/${w}.png`}); console.log('shot',w);}
  if(process.env.SEQ){ await p.evaluate(()=>window.setWeather(process?0:0,true)).catch(()=>{});
    for(const w of process.env.SEQ.split(',')){ await p.evaluate(w=>window.setWeather(w,true),w); await p.evaluate(()=>window.simulate(1));

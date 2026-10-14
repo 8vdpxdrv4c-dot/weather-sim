@@ -385,12 +385,16 @@ kids.forEach((kd, i) => {
   const handle = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 12, Math.PI), M(0x8a6a50)); handle.rotation.z = Math.PI; handle.position.set(0.04, 0, 0); g.add(handle);
   g.traverse(m => { if (m.isMesh) m.castShadow = true; }); g.visible = false; kd.add(g); kd.userData.umb = { g, can };
 });
-const ACTS = ['idle', 'walk', 'walk', 'walk', 'walk', 'sit', 'lie', 'lie', 'look', 'look'];
+const ACTS_ALL = ['idle', 'walk', 'walk', 'walk', 'walk', 'sit', 'lie', 'lie', 'look', 'look'];
+const ACTS_DRY = ['idle', 'walk', 'walk', 'walk', 'walk', 'sit', 'look', 'look'];
+const noLie = () => currentName === 'rain' || currentName === 'snow';
+const ACTS = () => noLie() ? ACTS_DRY : ACTS_ALL;
 function pickGoal(kd) { const u = kd.userData;
   for (let tries = 0; tries < 12; tries++) { const a = Math.random() * 6.283, r = 0.6 + Math.random() * 1.4; const g = new THREE.Vector2(THREE.MathUtils.clamp(u.home.x + Math.cos(a) * r, -2.6, 2.6), THREE.MathUtils.clamp(u.home.y + Math.sin(a) * r, -2.8, 2.9));
     if (kids.every(o => o === kd || (Math.hypot(o.position.x - g.x, o.position.z - g.y) > 0.75 && (!o.userData.goal || o.userData.goal.distanceTo(g) > 0.75)))) return g; }
   return null; }
-function setAct(kd, act) { const u = kd.userData; u.act = act; u.timer = act === 'lie' ? 12 + Math.random() * 6 : 6 + Math.random() * 6; u.goal = act === 'walk' ? pickGoal(kd) : null; if (act === 'walk' && !u.goal) u.act = 'idle'; }
+function setAct(kd, act) { const u = kd.userData; if (act === 'lie' && noLie()) act = 'sit';
+  u.act = act; u.timer = act === 'lie' ? 12 + Math.random() * 6 : 6 + Math.random() * 6; u.goal = act === 'walk' ? pickGoal(kd) : null; if (act === 'walk' && !u.goal) u.act = 'idle'; }
 window.kidAct = (i, a) => setAct(kids[i], a);
 const angLerp = (a, b, m) => { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + Math.max(-m, Math.min(m, d)); };
 
@@ -559,7 +563,8 @@ function update(dt) {
         else { u.act = 'idle'; u.goal = null; }
       } else if (u.chasing !== undefined) { u.chasing = undefined; u.timer = 1; u.act = 'idle'; u.goal = null; }
     }
-    u.timer -= dt; if (u.timer <= 0 || (u.act === 'walk' && !u.goal)) setAct(kd, ACTS[Math.floor(Math.random() * ACTS.length)]);
+    if (noLie() && (u.act === 'lie' || (u.w.lie || 0) > 0.15)) { u.act = 'sit'; u.timer = Math.max(u.timer, 4); }
+    u.timer -= dt; if (u.timer <= 0 || (u.act === 'walk' && !u.goal)) { const pool = ACTS(); setAct(kd, pool[Math.floor(Math.random() * pool.length)]); }
     const ease = 1 - Math.exp(-dt * 1.5);
     w.lie ??= 0;
     const tw = { walk: u.act === 'walk' ? 1 : 0, look: u.act === 'look' ? 1 : 0,
