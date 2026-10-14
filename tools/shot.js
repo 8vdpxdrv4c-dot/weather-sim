@@ -7,11 +7,11 @@ const { chromium } = require('/workspace/wr_tools/node_modules/playwright');
  await p.goto(base+'?shot=1');
  await p.waitForFunction('window.__ready===true',null,{timeout:240000});
  const list=(process.argv[2]||'sunny,overcast,rain,snow,fog,wind').split(',');
- for(const w of list){ await p.evaluate(w=>window.setWeather(w,true),w); await p.evaluate(()=>window.simulate(2.0));
+ for(const w of list){ await p.evaluate(w=>window.setWeather(w,true),w); await p.evaluate(w=>window.simulate(w==='snow'?9:2.0),w);
    await p.screenshot({path:`/workspace/weather-v2/screenshots/${w}.png`}); console.log('shot',w);}
  if(process.env.SEQ){ await p.evaluate(()=>window.setWeather(process?0:0,true)).catch(()=>{});
    for(const w of process.env.SEQ.split(',')){ await p.evaluate(w=>window.setWeather(w,true),w); await p.evaluate(()=>window.simulate(1));
    for(let i=0;i<6;i++){ await p.evaluate(()=>window.simulate(1/30,1/30)); await p.screenshot({path:`/tmp/seq_${w}_${i}.png`}); } } }
- if(process.env.KIDS){ await p.evaluate(()=>{window.setWeather('sunny',true);kidAct(0,'sit');kidAct(1,'walk');kidAct(2,'look');kidAct(3,'walk');kidAct(4,'sit');window.simulate(3);}); await p.screenshot({path:'/workspace/weather-v2/screenshots/kids.png'}); console.log('kids'); }
+ if(process.env.KIDS){ await p.evaluate(()=>{window.setWeather('sunny',true);kidAct(0,'lie');kidAct(1,'walk');kidAct(2,'sit');kidAct(3,'walk');kidAct(4,'look');window.simulate(9);}); await p.screenshot({path:'/workspace/weather-v2/screenshots/kids.png'}); console.log('kids'); }
  console.log('ERRS:\n'+errs.join('\n')); await b.close();
 })();

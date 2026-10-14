@@ -133,9 +133,20 @@ const snowCover = { value: 0 };
 const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 groundMat.onBeforeCompile = (s) => { s.uniforms.uSnow = snowCover; s.fragmentShader = 'uniform float uSnow;\n' + s.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92,0.94,0.97), uSnow*0.85);'); };
 scene.add(new THREE.Mesh(groundGeo, groundMat));
+const snowLayerU = { value: 0 };
+const snowLayer = (() => {
+  const g = new THREE.PlaneGeometry(90, 70, 260, 200); g.rotateX(-Math.PI / 2); g.translate(0, 0, -25);
+  const p = g.attributes.position, lay = new Float32Array(p.count);
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i);
+    const bump = 0.07 * Math.sin(x * 1.3 + Math.sin(z * 0.9) * 1.5) * Math.sin(z * 1.1 + x * 0.3) + 0.04 * Math.sin(x * 3.1 + z * 2.3) + 0.05 * Math.sin(x * 0.45 - z * 0.6);
+    lay[i] = 0.26 + bump * 0.8; p.setY(i, hgt(x, z) + lay[i]); }
+  g.computeVertexNormals(); g.setAttribute('aLayer', new THREE.BufferAttribute(lay, 1));
+  const m = new THREE.MeshLambertMaterial({ color: 0xf6f9fc });
+  m.onBeforeCompile = (sh) => { sh.uniforms.uCov = snowLayerU; sh.uniforms.uKids = kidPosU; sh.vertexShader = 'attribute float aLayer; uniform float uCov; uniform vec2 uKids[5];\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n float kd = 99.0; for(int i=0;i<5;i++) kd = min(kd, distance(transformed.xz, uKids[i]));\n float keep = uCov * mix(0.15, 1.0, smoothstep(0.25, 0.8, kd));\n transformed.y -= aLayer * (1.0 - keep) + 0.03*(1.0-uCov);'); };
+  const mesh = new THREE.Mesh(g, m); mesh.visible = false; scene.add(mesh); return mesh; })();
 
 // ---------- grass (instanced shader blades) ----------
-const windU = { value: 0.1 }, timeU = { value: 0 };
+const windU = { value: 0.1 }, timeU = { value: 0 }, kidPosU = { value: [0,1,2,3,4].map(() => new THREE.Vector2(99, 99)) }, buryU = { value: 0 };
 const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new THREE.Color() } };
 {
   const bw = 0.075, ys = [0, 0.35, 0.7], ws = [1, 0.75, 0.42];
@@ -151,11 +162,13 @@ const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new 
   g.instanceCount = vr.length;
   const mat = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
-    uniforms: { uTime: timeU, uWind: windU, uSnow: snowCover, uBase: { value: C(0x4f9a1c) }, uTip: { value: C(0xb6e04e) }, ...lightU, ...fogUniforms },
-    vertexShader: `attribute vec4 aOff; attribute float aVar; uniform float uTime,uWind; varying float vT,vVar,vDist; ${GLSL_H}
+    uniforms: { uTime: timeU, uWind: windU, uSnow: snowCover, uKids: kidPosU, uBury: buryU, uBase: { value: C(0x4f9a1c) }, uTip: { value: C(0xb6e04e) }, ...lightU, ...fogUniforms },
+    vertexShader: `attribute vec4 aOff; attribute float aVar; uniform float uTime,uWind,uBury; uniform vec2 uKids[5]; varying float vT,vVar,vDist; ${GLSL_H}
     void main(){ vec2 b = aOff.xy; float gy = hgt(b); vec3 root = vec3(b.x,gy,b.y);
       float d = distance(root, cameraPosition); float fade = 1.0 - smoothstep(24.0,36.0,d);
       float s = sin(aOff.z), c = cos(aOff.z); float hs = aOff.w*fade*(0.85+0.3*aVar);
+      float kd = 99.0; for(int i=0;i<5;i++) kd = min(kd, distance(b, uKids[i]));
+      hs *= mix(0.3, 1.0, smoothstep(0.35, 0.9, kd)) * (1.0 - 0.9*uBury);
       vec3 lp = vec3(position.x*c, position.y*hs, position.x*s);
       float t = position.y; float bend = t*t*hs;
       float gust = 0.5+0.5*sin(uTime*1.3 - b.x*0.35 + b.y*0.12);
@@ -176,6 +189,7 @@ const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new 
 }
 
 // ---------- flowers ----------
+window.__flowers = [];
 {
   const shape = new THREE.Shape(); const N = 80;
   for (let i = 0; i <= N; i++) { const a = i / N * Math.PI * 2; const r = 0.55 + 0.45 * Math.pow(Math.abs(Math.cos(a * 2.5)), 0.7); const x = Math.cos(a) * r, y = Math.sin(a) * r; i ? shape.lineTo(x, y) : shape.moveTo(x, y); }
@@ -186,7 +200,8 @@ const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new 
   for (let i = 0; i < 3200; i++) { const x = rr(-30, 30), z = rr(-28, 5.5); flowers.push([x, z, rr(0.035, 0.07), rr(0.2, 0.38)]); }
   for (let i = 0; i < 26; i++) { const x = rr(-3.4, 3.4), z = rr(3.4, 5.2); if (Math.abs(x) < 0.5) continue; flowers.push([x, z, rr(0.09, 0.17), rr(0.3, 0.5)]); }
   const n = flowers.length;
-  const mk = (geo, mat) => { const m = new THREE.InstancedMesh(geo, mat, n); scene.add(m); return m; };
+  const mk = (geo, mat) => { const m = new THREE.InstancedMesh(geo, mat, n); scene.add(m); window.__flowers.push(m); return m; };
+  const flowerMeshes = [];
   const petals = mk(petalGeo, new THREE.MeshLambertMaterial({ side: THREE.DoubleSide }));
   const centers = mk(centerGeo, new THREE.MeshLambertMaterial({ side: THREE.DoubleSide }));
   const stems = mk(stemGeo, new THREE.MeshLambertMaterial({ color: 0x5e9e2a }));
@@ -212,6 +227,10 @@ const swayers = [];
 const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8a5a36 });
 const leafMats = [0x7cc63a, 0x93d24a, 0x6ab832, 0xa8dc58, 0x86cc40].map(h => new THREE.MeshLambertMaterial({ color: h }));
 const leafBase = leafMats.map(m => m.color.clone());
+const leafSnowU = { value: 0 };
+leafMats.forEach(m => { m.onBeforeCompile = (sh) => { sh.uniforms.uLS = leafSnowU;
+  sh.vertexShader = 'varying vec3 vWN;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vWN = normalize(mat3(modelMatrix) * objectNormal);');
+  sh.fragmentShader = 'varying vec3 vWN; uniform float uLS;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.97,0.98,1.0), uLS * smoothstep(0.15, 0.55, vWN.y));'); }; });
 const blobGeo = new THREE.IcosahedronGeometry(1, 3);
 function makeTree(x, z, s, detail = true) {
   const g = new THREE.Group(); g.position.set(x, hgt(x, z) - 0.05, z); g.scale.setScalar(s);
@@ -321,12 +340,12 @@ const kidDefs = [
 const kids = kidDefs.map(d => { const k = makeKid(d); k.position.set(d.x, hgt(d.x, d.z) - 0.01, d.z); k.rotation.y = d.ry; k.scale.setScalar(1.18); scene.add(k);
   Object.assign(k.userData, { blob: blob(d.x, d.z + 0.05, 0.38, 1.1), home: new THREE.Vector2(d.x, d.z), homeRy: d.ry, heading: d.ry, act: 'idle', timer: 2 + Math.random() * 4, w: { walk: 0, sit: 0, look: 0 }, goal: null, walkPh: 0 });
   return k; });
-const ACTS = ['idle', 'idle', 'walk', 'walk', 'walk', 'sit', 'sit', 'look', 'look'];
+const ACTS = ['idle', 'walk', 'walk', 'walk', 'walk', 'sit', 'lie', 'lie', 'look', 'look'];
 function pickGoal(kd) { const u = kd.userData;
-  for (let tries = 0; tries < 12; tries++) { const a = Math.random() * 6.283, r = 0.3 + Math.random() * 0.8; const g = new THREE.Vector2(u.home.x + Math.cos(a) * r, u.home.y + Math.sin(a) * r * 0.7);
+  for (let tries = 0; tries < 12; tries++) { const a = Math.random() * 6.283, r = 0.6 + Math.random() * 1.4; const g = new THREE.Vector2(THREE.MathUtils.clamp(u.home.x + Math.cos(a) * r, -2.6, 2.6), THREE.MathUtils.clamp(u.home.y + Math.sin(a) * r, -2.8, 2.9));
     if (kids.every(o => o === kd || (Math.hypot(o.position.x - g.x, o.position.z - g.y) > 0.75 && (!o.userData.goal || o.userData.goal.distanceTo(g) > 0.75)))) return g; }
   return null; }
-function setAct(kd, act) { const u = kd.userData; u.act = act; u.timer = 6 + Math.random() * 6; u.goal = act === 'walk' ? pickGoal(kd) : null; if (act === 'walk' && !u.goal) u.act = 'idle'; }
+function setAct(kd, act) { const u = kd.userData; u.act = act; u.timer = act === 'lie' ? 12 + Math.random() * 6 : 6 + Math.random() * 6; u.goal = act === 'walk' ? pickGoal(kd) : null; if (act === 'walk' && !u.goal) u.act = 'idle'; }
 window.kidAct = (i, a) => setAct(kids[i], a);
 const angLerp = (a, b, m) => { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + Math.max(-m, Math.min(m, d)); };
 
@@ -435,7 +454,7 @@ const windLineU = { uTime: timeU, uOpacity: { value: 0 }, ...fogUniforms };
 
 // ---------- audio ----------
 const AUD = {}; for (const n of ['sunny', 'kids', 'overcast', 'rain', 'snow', 'wind']) { const a = new Audio(`./audio/${n}.mp3`); a.loop = true; a.volume = 0; a.preload = 'auto'; AUD[n] = a; }
-const MIX = { sunny: { sunny: 0.5, kids: 0.18 }, overcast: { overcast: 0.35, sunny: 0.08 }, rain: { rain: 0.75 }, snow: { snow: 0.35 }, fog: { overcast: 0.15, sunny: 0.12 }, wind: { wind: 0.7, sunny: 0.1 } };
+const MIX = { sunny: { sunny: 0.5, kids: 0.18 }, overcast: { overcast: 0.35, sunny: 0.08 }, rain: { rain: 0.8 }, snow: { snow: 0.35 }, fog: { overcast: 0.15, sunny: 0.12 }, wind: { wind: 0.7, sunny: 0.1 } };
 let audioOn = false;
 function startAudio() { if (audioOn) return; audioOn = true; for (const a of Object.values(AUD)) a.play().catch(() => {}); }
 addEventListener('pointerdown', startAudio, { once: false });
@@ -455,7 +474,7 @@ setWeather(params.get('w') || 'sunny', true);
 function onResize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
   scaleU.value = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))); }
 addEventListener('resize', onResize);
-let simTime = 0, cloudOff = 0;
+let simTime = 0, cloudOff = 0, accum = 0;
 function update(dt) {
   simTime += dt; timeU.value = simTime;
   const k = 1 - Math.exp(-dt * 1.4);
@@ -466,16 +485,23 @@ function update(dt) {
   fogUniforms.uFogColor.value.copy(cur.fogCol); fogUniforms.uFogDensity.value = cur.fogD;
   lightU.uAmb.value = cur.hemi; lightU.uSunI.value = cur.sun; lightU.uSunCol.value.copy(cur.sunCol);
   windU.value = cur.wind; snowCover.value = cur.cover;
+  accum += ((target.cover || 0) - accum) * (1 - Math.exp(-dt * (target.cover ? 0.45 : 0.9)));
+  snowLayerU.value = accum; snowLayer.visible = accum > 0.005; for (const f of window.__flowers) f.position.y = -0.32 * accum; buryU.value = accum; leafSnowU.value = accum;
+  kids.forEach((kd, i) => kidPosU.value[i].set(kd.position.x, kd.position.z));
   rainU.uOpacity.value = cur.rain; snowU.uOpacity.value = cur.snow; windLineU.uOpacity.value = cur.lines;
-  leafMats.forEach((m, i) => m.color.copy(leafBase[i]).lerp(C(0xe6eef0), cur.cover * 0.45));
+  leafMats.forEach((m, i) => m.color.copy(leafBase[i]).lerp(C(0xe6eef0), accum * 0.2));
   cloudOff += dt * cur.cloudSpd;
   for (const c of clouds) { const span = 900; let x = c.userData.base + cloudOff; x = ((x + span / 2) % span + span) % span - span / 2; c.position.x = x;
     c.material.color.copy(cur.cloudCol); c.material.opacity = (c.userData.grey ? cur.grey : 1) * cur.cloud; }
-  for (const s of swayers) { const ph = s.userData.ph; s.rotation.z = Math.sin(simTime * 0.7 + ph) * 0.015 - cur.wind * (0.05 + 0.03 * Math.sin(simTime * 1.6 + ph)); s.rotation.x = Math.sin(simTime * 0.53 + ph) * 0.01 * (1 + cur.wind * 2); }
+  for (const s of swayers) { const ph = s.userData.ph; s.rotation.z = Math.sin(simTime * 0.7 + ph) * 0.015 - cur.wind * (0.07 + 0.045 * Math.sin(simTime * 1.1 + ph) + 0.015 * Math.sin(simTime * 1.9 + ph * 2)); s.rotation.x = Math.sin(simTime * 0.53 + ph) * 0.01 * (1 + cur.wind * 3.5); }
   for (const kd of kids) { const u = kd.userData, t = simTime + u.ph, w = u.w;
     u.timer -= dt; if (u.timer <= 0 || (u.act === 'walk' && !u.goal)) setAct(kd, ACTS[Math.floor(Math.random() * ACTS.length)]);
     const ease = 1 - Math.exp(-dt * 1.5);
-    for (const key of ['walk', 'sit', 'look']) w[key] += ((u.act === key ? 1 : 0) - w[key]) * ease;
+    w.lie ??= 0;
+    const tw = { walk: u.act === 'walk' ? 1 : 0, look: u.act === 'look' ? 1 : 0,
+      sit: (u.act === 'sit' || u.act === 'lie' || w.lie > 0.08) ? 1 : 0, lie: (u.act === 'lie' && w.sit > 0.92) ? 1 : 0 };
+    if (u.act === 'walk' && (w.sit > 0.05)) tw.walk = 0;
+    for (const key in tw) w[key] += (tw[key] - w[key]) * (key === 'lie' ? 1 - Math.exp(-dt * 0.9) : ease);
     // walking (only once fully standing)
     let moving = 0;
     if (u.act === 'walk' && u.goal && w.sit < 0.05) {
@@ -491,10 +517,11 @@ function update(dt) {
     u.blob.position.set(kd.position.x, hgt(kd.position.x, kd.position.z) + 0.03, kd.position.z + 0.05);
     u.walkPh += dt * moving * 22; const wc = Math.sin(u.walkPh), ww = Math.min(1, moving / 0.2);
     const ws = w.sit, wl = w.look;
-    u.legs.forEach((l, i) => { l.rotation.x = (i ? 1 : -1) * wc * 0.45 * ww - 1.45 * ws; l.rotation.z = (i ? 1 : -1) * 0.12 * ws; });
-    u.body.position.y = -0.255 * ws + Math.abs(Math.cos(u.walkPh)) * 0.012 * ww;
-    u.torso.scale.y = 1 + Math.sin(t * 1.6) * 0.012; u.torso.rotation.x = -0.12 * wl - 0.05 * ws;
-    u.head.rotation.x = -0.42 * wl; u.head.rotation.z = Math.sin(t * 0.6) * 0.04 * (1 - wl); u.head.position.y = 0.95 + Math.sin(t * 1.6) * 0.004;
+    const wlie = w.lie, ang = 1.42 * wlie;
+    u.legs.forEach((l, i) => { l.rotation.x = (i ? 1 : -1) * wc * 0.45 * ww - 1.45 * ws - 0.12 * wlie; l.rotation.z = (i ? 1 : -1) * 0.12 * ws; });
+    u.body.position.y = -0.255 * ws - 0.07 * wlie + Math.abs(Math.cos(u.walkPh)) * 0.012 * ww;
+    u.torso.scale.y = 1 + Math.sin(t * 1.6) * 0.012; u.torso.rotation.x = -0.12 * wl - 0.05 * ws * (1 - wlie) - ang;
+    u.head.rotation.x = -0.42 * wl - ang * 0.9; u.head.rotation.z = Math.sin(t * 0.6) * 0.04 * (1 - wl); const hb = 0.59 + Math.sin(t * 1.6) * 0.004; u.head.position.set(0, 0.36 + hb * Math.cos(ang), -hb * Math.sin(ang));
     const down = Math.min(1, Math.max(ww, ws, w.walk));
     u.arms.forEach((a, i) => { const sx = a.userData.sx; const zr = a.userData.base * (1 - down) + sx * 0.3 * down;
       a.rotation.z = zr + sx * Math.sin(t * 1.2 + i * 1.3) * 0.1 * (1 - down);
