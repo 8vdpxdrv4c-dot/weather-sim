@@ -141,7 +141,7 @@ const snowLayer = (() => {
     const bump = 0.07 * Math.sin(x * 1.3 + Math.sin(z * 0.9) * 1.5) * Math.sin(z * 1.1 + x * 0.3) + 0.04 * Math.sin(x * 3.1 + z * 2.3) + 0.05 * Math.sin(x * 0.45 - z * 0.6);
     lay[i] = 0.26 + bump * 0.8; p.setY(i, hgt(x, z) + lay[i]); }
   g.computeVertexNormals(); g.setAttribute('aLayer', new THREE.BufferAttribute(lay, 1));
-  const m = new THREE.MeshLambertMaterial({ color: 0xf6f9fc });
+  const m = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xc8ced8, emissiveIntensity: 0.42 });
   m.onBeforeCompile = (sh) => { sh.uniforms.uCov = snowLayerU; sh.uniforms.uKids = kidPosU; sh.vertexShader = 'attribute float aLayer; uniform float uCov; uniform vec2 uKids[5];\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n float kd = 99.0; for(int i=0;i<5;i++) kd = min(kd, distance(transformed.xz, uKids[i]));\n float keep = uCov * mix(0.15, 1.0, smoothstep(0.25, 0.8, kd));\n transformed.y -= aLayer * (1.0 - keep) + 0.03*(1.0-uCov);'); };
   const mesh = new THREE.Mesh(g, m); mesh.visible = false; scene.add(mesh); return mesh; })();
 
@@ -340,6 +340,19 @@ const kidDefs = [
 const kids = kidDefs.map(d => { const k = makeKid(d); k.position.set(d.x, hgt(d.x, d.z) - 0.01, d.z); k.rotation.y = d.ry; k.scale.setScalar(1.18); scene.add(k);
   Object.assign(k.userData, { blob: blob(d.x, d.z + 0.05, 0.38, 1.1), home: new THREE.Vector2(d.x, d.z), homeRy: d.ry, heading: d.ry, act: 'idle', timer: 2 + Math.random() * 4, w: { walk: 0, sit: 0, look: 0 }, goal: null, walkPh: 0 });
   return k; });
+const UMB_COLS = [0xff6b8a, 0xffc93a, 0x5aa9ff, 0x7ad46a, 0xb98aff];
+kids.forEach((kd, i) => {
+  const g = new THREE.Group(); const col = UMB_COLS[i % 5];
+  const can = new THREE.Group(); can.position.y = 0.62; g.add(can);
+  const hex = '#' + new THREE.Color(col).getHexString(), light = '#' + new THREE.Color(col).lerp(new THREE.Color(0xffffff), 0.55).getHexString();
+  const tex = canvasTex(128, 8, (c, w) => { for (let k = 0; k < 8; k++) { c.fillStyle = k % 2 ? light : hex; c.fillRect(k * 16, 0, 16, 8); } });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 10, 0, Math.PI * 2, 0, Math.PI / 2.2), new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }));
+  dome.scale.y = 0.62; dome.position.y = -0.1; can.add(dome);
+  const tip = sph(0.03, 0xffffff, 8, 6); tip.position.y = 0.22; can.add(tip);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.66, 6), M(0x8a6a50)); shaft.position.y = 0.31; g.add(shaft);
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 12, Math.PI), M(0x8a6a50)); handle.rotation.z = Math.PI; handle.position.set(0.04, 0, 0); g.add(handle);
+  g.visible = false; kd.add(g); kd.userData.umb = { g, can };
+});
 const ACTS = ['idle', 'walk', 'walk', 'walk', 'walk', 'sit', 'lie', 'lie', 'look', 'look'];
 function pickGoal(kd) { const u = kd.userData;
   for (let tries = 0; tries < 12; tries++) { const a = Math.random() * 6.283, r = 0.6 + Math.random() * 1.4; const g = new THREE.Vector2(THREE.MathUtils.clamp(u.home.x + Math.cos(a) * r, -2.6, 2.6), THREE.MathUtils.clamp(u.home.y + Math.sin(a) * r, -2.8, 2.9));
@@ -363,20 +376,22 @@ for (let i = 0; i < 7; i++) {
 }
 
 // ---------- rain (GPU streaks + splashes) ----------
-const rainU = { uTime: timeU, uOpacity: { value: 0 }, uSlant: { value: new THREE.Vector2(0.12, 0.02) }, ...fogUniforms };
+const rainU = { uKids: kidPosU, uUmb: { value: 0 }, uTime: timeU, uOpacity: { value: 0 }, uSlant: { value: new THREE.Vector2(0.12, 0.02) }, ...fogUniforms };
 {
   const N = 14000; const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0], 3)); g.setIndex([0, 1, 2, 1, 3, 2]);
   const a = new Float32Array(N * 4); for (let i = 0; i < N; i++) { a.set([rr(-16, 16), rr(-18, 7), rnd(), rr(0.8, 1.2)], i * 4); }
   g.setAttribute('aDrop', new THREE.InstancedBufferAttribute(a, 4)); g.instanceCount = N;
   const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: rainU, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    vertexShader: `attribute vec4 aDrop; uniform float uTime; uniform vec2 uSlant; varying vec2 vUv; varying float vDist,vNear; ${GLSL_H}
+    vertexShader: `attribute vec4 aDrop; uniform float uTime; uniform vec2 uSlant; uniform vec2 uKids[5]; uniform float uUmb; varying vec2 vUv; varying float vDist,vNear; ${GLSL_H}
     void main(){ float H = 14.0; float fall = mod(aDrop.z*H + uTime*13.0*aDrop.w, H);
       vec2 xz = aDrop.xy + uSlant*fall; float y = hgt(xz) + H - fall;
       vec3 head = vec3(xz.x,y,xz.y); vec3 dir = normalize(vec3(uSlant.x,-1.0,uSlant.y));
       vec3 side = normalize(cross(dir, normalize(cameraPosition-head)));
       vec3 p = head - dir*0.55*aDrop.w*position.y + side*position.x*0.016;
-      vec4 mv = viewMatrix*vec4(p,1.0); vDist = -mv.z; vNear = smoothstep(0.6,2.0,vDist); vUv = position.xy; gl_Position = projectionMatrix*mv; }`,
+      vec4 mv = viewMatrix*vec4(p,1.0); vDist = -mv.z; vNear = smoothstep(0.6,2.0,vDist);
+      float kd = 99.0; for(int i=0;i<5;i++) kd = min(kd, distance(xz, uKids[i]));
+      if (kd < 0.68 && y < hgt(xz) + 1.85) vNear *= 1.0 - uUmb; vUv = position.xy; gl_Position = projectionMatrix*mv; }`,
     fragmentShader: `uniform float uOpacity; varying vec2 vUv; varying float vDist,vNear; ${GLSL_FOG}
     void main(){ float a = (1.0-abs(vUv.x)) * pow(1.0-vUv.y,0.7) * vNear * uOpacity * 0.6;
       vec3 c = applyFog(vec3(0.93,0.96,1.0), vDist*0.35);
@@ -488,7 +503,7 @@ function update(dt) {
   accum += ((target.cover || 0) - accum) * (1 - Math.exp(-dt * (target.cover ? 0.45 : 0.9)));
   snowLayerU.value = accum; snowLayer.visible = accum > 0.005; for (const f of window.__flowers) f.position.y = -0.32 * accum; buryU.value = accum; leafSnowU.value = accum;
   kids.forEach((kd, i) => kidPosU.value[i].set(kd.position.x, kd.position.z));
-  rainU.uOpacity.value = cur.rain; snowU.uOpacity.value = cur.snow; windLineU.uOpacity.value = cur.lines;
+  rainU.uOpacity.value = cur.rain; rainU.uUmb.value = THREE.MathUtils.smoothstep(cur.rain, 0.3, 0.9); snowU.uOpacity.value = cur.snow; windLineU.uOpacity.value = cur.lines;
   leafMats.forEach((m, i) => m.color.copy(leafBase[i]).lerp(C(0xe6eef0), accum * 0.2));
   cloudOff += dt * cur.cloudSpd;
   for (const c of clouds) { const span = 900; let x = c.userData.base + cloudOff; x = ((x + span / 2) % span + span) % span - span / 2; c.position.x = x;
@@ -526,6 +541,15 @@ function update(dt) {
     u.arms.forEach((a, i) => { const sx = a.userData.sx; const zr = a.userData.base * (1 - down) + sx * 0.3 * down;
       a.rotation.z = zr + sx * Math.sin(t * 1.2 + i * 1.3) * 0.1 * (1 - down);
       a.rotation.x = (a.userData.baseX || 0) * (1 - down) + (i ? -1 : 1) * wc * 0.4 * ww - 0.5 * ws; }); }
+  const umbOn = THREE.MathUtils.smoothstep(cur.rain, 0.05, 0.6);
+  for (const kd of kids) { const u = kd.userData, U = u.umb, wl2 = u.w.lie || 0;
+    U.g.visible = umbOn > 0.01; if (!U.g.visible) continue;
+    const open = THREE.MathUtils.smoothstep(umbOn, 0.35, 1.0);
+    U.g.scale.setScalar(Math.min(1, umbOn * 1.6)); U.can.scale.set(0.15 + 0.85 * open, 1 + 1.6 * (1 - open), 0.15 + 0.85 * open);
+    const by = u.body.position.y;
+    U.g.position.set(THREE.MathUtils.lerp(0.27, 0.62, wl2), THREE.MathUtils.lerp(0.88 + by, 0.18, wl2), THREE.MathUtils.lerp(0, 0.15, wl2));
+    U.g.rotation.set(0, 0, -1.25 * wl2);
+    const a = u.arms[1], k = umbOn * (1 - wl2); a.rotation.z += (2.75 - a.rotation.z) * k; a.rotation.x *= 1 - k; }
   for (const f of flies) { const u = f.userData, t = simTime * u.sp + u.ph;
     const vis = cur.fly; f.visible = vis > 0.02; f.scale.setScalar(Math.max(vis, 0.001));
     const x = u.cx + Math.sin(t) * u.ax, z = u.cz + Math.sin(t * 1.7) * u.az, y = u.cy + Math.sin(t * 2.3) * 0.25;
