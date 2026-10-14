@@ -22,7 +22,7 @@ canvas{display:block}
 <div id="bar"></div>
 <div id="hint">点击任意天气按钮开启声音 · 拖动旋转视角 · 滚轮缩放</div>
 <div id="info"><h3></h3><div></div></div>
-<div id="tools"><button id="mute">🔊 声音</button><button id="lt">⚡ 闪电：开</button><button id="hq">画质：流畅</button></div>
+<div id="tools"><button id="mute">🔊 声音</button><button id="lt">⚡ 闪电：关</button></div>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -30,12 +30,6 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const Q = new URLSearchParams(location.search);
 const SHOT = Q.has('shot');
@@ -74,17 +68,17 @@ float fbm(vec2 p){float v=0.,a=.5;mat2 r=mat2(1.6,1.2,-1.2,1.6);for(int i=0;i<6;
 
 // ---------- weather presets ----------
 const W = {
- sunny:   {bfly:1,sat:1.3,warm:.035,lift:.035,name:'晴', icon:'☀️', elev:30, turb:1.1, ray:3.6, mie:.004, cover:.44, dark:0, gray:0, sun:3.6, hemi:1.15, env:1.25, fog:.0032, fogC:0xb9d6f2, wind:.25, rain:0, snow:0, snowG:0, wet:0, leaves:0, exp:.86, bloom:.32, cloudSpd:.6, light:0xfff1dc,
+ sunny:   {bfly:1,sat:1.3,warm:.035,lift:.035,name:'晴', icon:'☀️', elev:30, turb:1.1, ray:3.6, mie:.004, cover:.44, dark:0, gray:0, sun:3.6, hemi:1.15, env:1.25, fog:.0032, fogC:0xb9d6f2, wind:.25, rain:0, snow:0, snowG:0, wet:0, leaves:0, exp:.97, bloom:.32, cloudSpd:.6, light:0xfff1dc,
   t:'晴天', d:'天空中云量少（0～2成），太阳辐射强，大气透明度高，天空呈蔚蓝色——这是空气分子对短波蓝光的瑞利散射。地面受热快，昼夜温差大。'},
- overcast:{bfly:0,sat:1.08,warm:0,lift:.07,name:'阴', icon:'☁️', elev:30, turb:8, ray:2.5, mie:.02, cover:.92, dark:.3, gray:.9, sun:.6, hemi:1.4, env:.8, fog:.0065, fogC:0xc3cbd3, wind:.45, rain:0, snow:0, snowG:0, wet:0, leaves:0, exp:.82, bloom:.15, cloudSpd:.9, light:0xeef2f6,
+ overcast:{bfly:0,sat:1.08,warm:0,lift:.07,name:'阴', icon:'☁️', elev:30, turb:8, ray:2.5, mie:.02, cover:.92, dark:.3, gray:.9, sun:.6, hemi:1.4, env:.8, fog:.0065, fogC:0xc3cbd3, wind:.45, rain:0, snow:0, snowG:0, wet:0, leaves:0, exp:.93, bloom:.15, cloudSpd:.9, light:0xeef2f6,
   t:'阴天', d:'云量达8成以上，云层遮蔽太阳，阳光以散射光为主，地面几乎没有清晰的影子。云层的保温作用使昼夜温差变小。'},
- rain:    {bfly:0,sat:1.05,warm:-.02,lift:.05,name:'雨', icon:'🌧️', elev:30, turb:10, ray:3, mie:.03, cover:1, dark:.65, gray:.97, sun:.25, hemi:1.15, env:.55, fog:.014, fogC:0x8d98a3, wind:.75, rain:1, snow:0, snowG:0, wet:1, leaves:0, exp:.78, bloom:.25, cloudSpd:1.4, light:0xc8d2dc,
+ rain:    {bfly:0,sat:1.05,warm:-.02,lift:.05,name:'雨', icon:'🌧️', elev:30, turb:10, ray:3, mie:.03, cover:1, dark:.65, gray:.97, sun:.25, hemi:1.15, env:.55, fog:.014, fogC:0x8d98a3, wind:.75, rain:1, snow:0, snowG:0, wet:1, leaves:0, exp:.9, bloom:.25, cloudSpd:1.4, light:0xc8d2dc,
   t:'雨', d:'暖湿空气上升冷却，水汽凝结成云滴，云滴不断碰并增大，当上升气流托不住时便降落形成降水。强对流时伴有雷电：先见闪电，后闻雷声（光速远大于声速）。'},
- snow:    {bfly:0,sat:1.08,warm:-.01,lift:.05,name:'雪', icon:'❄️', elev:26, turb:6, ray:2, mie:.015, cover:.95, dark:.35, gray:.92, sun:.6, hemi:1.3, env:.8, fog:.011, fogC:0xd6dde5, wind:.3, rain:0, snow:1, snowG:1, wet:0, leaves:0, exp:.8, bloom:.2, cloudSpd:.6, light:0xe8eef8,
+ snow:    {bfly:0,sat:1.08,warm:-.01,lift:.05,name:'雪', icon:'❄️', elev:26, turb:6, ray:2, mie:.015, cover:.95, dark:.35, gray:.92, sun:.6, hemi:1.3, env:.8, fog:.011, fogC:0xd6dde5, wind:.3, rain:0, snow:1, snowG:1, wet:0, leaves:0, exp:.92, bloom:.2, cloudSpd:.6, light:0xe8eef8,
   t:'雪', d:'云中温度低于0℃时，水汽直接凝华成冰晶并增长为雪花。近地面气温也较低时，雪花不融化落到地面，逐渐形成积雪，积雪反射率高（可达80%以上）。'},
- fog:     {bfly:0,sat:1.05,warm:.02,lift:.06,name:'雾', icon:'🌫️', elev:20, turb:6, ray:2, mie:.05, cover:.7, dark:.15, gray:.85, sun:.8, hemi:1.3, env:.8, fog:.07, fogC:0xd9dee2, wind:.05, rain:0, snow:0, snowG:0, wet:.25, leaves:0, exp:.82, bloom:.15, cloudSpd:.2, light:0xf0eee6,
+ fog:     {bfly:0,sat:1.05,warm:.02,lift:.06,name:'雾', icon:'🌫️', elev:20, turb:6, ray:2, mie:.05, cover:.7, dark:.15, gray:.85, sun:.8, hemi:1.3, env:.8, fog:.07, fogC:0xd9dee2, wind:.05, rain:0, snow:0, snowG:0, wet:.25, leaves:0, exp:.93, bloom:.15, cloudSpd:.2, light:0xf0eee6,
   t:'雾', d:'近地面空气中的水汽遇冷凝结成大量悬浮小水滴，使水平能见度低于1千米。常见于晴朗无风、湿度大的清晨（辐射雾），风小、逆温稳定的天气条件有利于雾的形成。'},
- wind:    {bfly:0,sat:1.22,warm:.04,lift:.06,name:'风', icon:'🌬️', elev:34, turb:3, ray:1.6, mie:.006, cover:.5, dark:.12, gray:.1, sun:3.2, hemi:1.1, env:1.15, fog:.0045, fogC:0xcfe0f2, wind:1.7, rain:0, snow:0, snowG:0, wet:0, leaves:1, exp:.84, bloom:.25, cloudSpd:5, light:0xfff4e4,
+ wind:    {bfly:0,sat:1.22,warm:.04,lift:.06,name:'风', icon:'🌬️', elev:34, turb:3, ray:1.6, mie:.006, cover:.5, dark:.12, gray:.1, sun:3.2, hemi:1.1, env:1.15, fog:.0045, fogC:0xcfe0f2, wind:1.7, rain:0, snow:0, snowG:0, wet:0, leaves:1, exp:.95, bloom:.25, cloudSpd:5, light:0xfff4e4,
   t:'大风', d:'风是空气的水平运动，由水平气压梯度力引起。气压差越大，风力越强。大风中草木摇摆、落叶飞扬，云的移动速度也明显加快。'},
 };
 const ORDER=['sunny','overcast','rain','snow','fog','wind'];
@@ -95,8 +89,8 @@ let target=W.sunny, curName='sunny';
 const RATE={bfly:.8,snowG:.12, wet:.25, snow:.6, rain:.7, leaves:.5};
 
 // ---------- renderer / scene ----------
-const renderer=new THREE.WebGLRenderer({antialias:false, powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+const renderer=new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth,innerHeight);
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=.62;
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -504,33 +498,9 @@ function setWeather(k,instant){ curName=k; target=W[k];
 window.setWeather=setWeather; window.__audioTest=async()=>{await initAudio(); return {state:actx.state,tracks:Object.keys(tracks),thunder:!!thunderBuf};}; window.__pick=(x,y)=>{const r=new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(x/innerWidth*2-1,-(y/innerHeight)*2+1),camera); return r.intersectObjects(scene.children,true).filter(h=>!h.object.isPoints).slice(0,4).map(h=>h.object.name+'|'+h.object.type+'|'+(h.object.parent&&h.object.parent.name)+'|'+h.distance.toFixed(2)+'|'+h.object.material?.type);};
 
 // ---------- post-processing ----------
-const composer=new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene,camera));
-const gtao=new GTAOPass(scene,camera,innerWidth,innerHeight); gtao.updateGtaoMaterial({radius:.5,distanceExponent:1.5,thickness:1,scale:1.2,samples:12}); gtao.blendIntensity=.9;
-composer.addPass(gtao); const FX=[]; { const orig=gtao.render.bind(gtao); gtao.render=(...a)=>{const v=FX.map(o=>o.visible); FX.forEach(o=>o.visible=false); orig(...a); FX.forEach((o,i)=>o.visible=v[i]);}; } 
-const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth/2,innerHeight/2),.3,.55,.85); composer.addPass(bloom);
-const godrays=new ShaderPass({uniforms:{tDiffuse:{value:null},uSun:{value:new THREE.Vector2(.8,.9)},uAmt:{value:0}},
- vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
- fragmentShader:`uniform sampler2D tDiffuse; uniform vec2 uSun; uniform float uAmt; varying vec2 vUv;
- void main(){ vec4 c=texture2D(tDiffuse,vUv); if(uAmt<.001){gl_FragColor=c;return;} vec2 d=(uSun-vUv)/40.; vec2 p=vUv; vec3 acc=vec3(0.); float w=1.;
-  for(int i=0;i<40;i++){ p+=d; vec3 s=texture2D(tDiffuse,clamp(p,0.,1.)).rgb; float l=max(dot(s,vec3(.3,.5,.2))-.95,0.); acc+=s*l*w; w*=.965; }
-  float fall=smoothstep(1.4,.0,distance(vUv,uSun)); gl_FragColor=vec4(c.rgb+acc*uAmt*.09*fall*vec3(1.,.95,.8),c.a);}`});
-composer.addPass(godrays);
-composer.addPass(new OutputPass());
-const grade=new ShaderPass({uniforms:{tDiffuse:{value:null},uSat:{value:1.2},uWarm:{value:.05},uLift:{value:.05}},
- vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
- fragmentShader:`uniform sampler2D tDiffuse; uniform float uSat,uWarm,uLift; varying vec2 vUv;
- void main(){ vec3 c=texture2D(tDiffuse,vUv).rgb;
-  c=c*(1.-uLift)+uLift;
-  float l=dot(c,vec3(.2126,.7152,.0722)); c=mix(vec3(l),c,uSat);
-  float sk=smoothstep(.1,.35,c.b-c.g+.15)*step(.5,vUv.y); c+=vec3(uWarm,uWarm*.45,-uWarm*.6)*(.4+.6*l)*(1.-sk); c=mix(c,c*vec3(.92,.97,1.08),sk*.6);
-  c=mix(c,c*c*(3.-2.*c),.12);
-  vec2 q=vUv-.5; c*=1.-dot(q,q)*.25;
-  gl_FragColor=vec4(clamp(c,0.,1.),1.);}`});
-composer.addPass(grade);
-let lightningOn=true; document.getElementById('lt').onclick=e=>{lightningOn=!lightningOn; e.target.textContent='⚡ 闪电：'+(lightningOn?'开':'关'); if(!lightningOn){flash=0;}};
-let hq=false; gtao.enabled=false; document.getElementById('hq').onclick=e=>{hq=!hq; gtao.enabled=hq; renderer.setPixelRatio(hq?Math.min(devicePixelRatio,1.5):1); onResize(); e.target.textContent='画质：'+(hq?'高':'流畅');};
-function onResize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);}
+const FX=[];
+let lightningOn=false; document.getElementById('lt').onclick=e=>{lightningOn=!lightningOn; e.target.textContent='⚡ 闪电：'+(lightningOn?'开':'关'); if(!lightningOn){flash=0; if(bolt)bolt.visible=false;}};
+function onResize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}
 addEventListener('resize',onResize);
 
 // ---------- build world ----------
@@ -541,8 +511,8 @@ const clock=new THREE.Clock();
  terrain=ter.scene; terrain.traverse(o=>{if(o.isMesh){o.material=groundMat;o.receiveShadow=true;}}); scene.add(terrain); terrain.updateMatrixWorld(true); buildHeight();
  scene.add(makeGrass(SHOT?140000:160000,24));
  const protos=[ta.scene,tb.scene];
- protos.forEach(p=>p.traverse(o=>{if(o.isMesh){ if(/leaves/i.test(o.material.name)){o.material.color.set(0xc8f07a);o.material.emissive.set(0x1a2a05);} else o.material.color.set(0xd8cfc0);o.castShadow=true;o.receiveShadow=true;patch(o.material,'tree');}}));
- sh.scene.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;patch(o.material,'tree');}});
+ protos.forEach(p=>p.traverse(o=>{if(o.isMesh){ if(/leaves/i.test(o.material.name)){o.userData.leaf=true;o.material.color.set(0xc8f07a);o.material.emissive.set(0x1a2a05);} else o.material.color.set(0xd8cfc0);o.castShadow=true;o.receiveShadow=!o.userData.leaf;patch(o.material,'tree');}}));
+ sh.scene.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=false;patch(o.material,'tree');}});
  const spots0=[[-8,-1,0,1.35],[9,-5,1,1.3],[-15,-12,1,1.2],[15,-14,0,1.1],[-22,-25,0,1.2],[22,-28,1,1.3],[-6,-34,1,1.2],[7,-40,0,1.3],[-4,-18,0,1.3],[20,-16,1,1.2],[-24,-14,0,1.1],[3,-28,1,1.4],[-30,8,1,1.2],[28,14,0,1],[-12,22,0,1.1],[12,24,1,1.2]];
  const spots=spots0.slice(0,10); for(const [x,z,ti,s] of spots){const t=protos[ti].clone(); t.position.set(x,heightAt(x,z)-.05,z); t.rotation.y=Math.random()*6.28; t.scale.setScalar(s*(ti?1.9:2.2)); scene.add(t);}
  for(let i=0;i<14;i++){const a=Math.random()*6.28,r=6+Math.random()*16; const x=Math.cos(a)*r,z=Math.sin(a)*r; if(z>-3&&Math.abs(x)<5)continue; if(Q.has('noshrub'))continue; const b=sh.scene.clone(); b.position.set(x,heightAt(x,z),z); b.scale.setScalar(.8+Math.random()*.8); b.rotation.y=a; scene.add(b);}
@@ -552,7 +522,7 @@ const clock=new THREE.Clock();
  setWeather(ORDER.includes(Q.get('w'))?Q.get('w'):'sunny',true);
  document.getElementById('load').style.opacity=0; setTimeout(()=>document.getElementById('load').remove(),900);
  window.__ready=true;
- if(SHOT){ window.simulate=(sec,step=.1)=>{ const r=composer.render; composer.render=()=>{}; for(let i=0;i<sec/step-1;i++) frame(step); composer.render=r; frame(step); return true; }; }
+ if(SHOT){ window.simulate=(sec,step=.1)=>{ window.__noRender=true; for(let i=0;i<sec/step-1;i++) frame(step); window.__noRender=false; frame(step); return true; }; }
  else renderer.setAnimationLoop(frame);
 })().catch(e=>{console.error(e); document.querySelector('#load div').textContent='加载失败：'+e.message+'（请用本地服务器打开，例如 python -m http.server）';});
 
@@ -564,7 +534,7 @@ function frame(fixed){
  const dt=typeof fixed==='number'?fixed:Math.min(clock.getDelta(),.1); simT+=dt; const t=simT;
  for(const k of KEYS){const r=RATE[k]||.9; cur[k]+=(target[k]-cur[k])*Math.min(1,dt*r);}
  cur.fogC.lerp(tmpC.set(target.fogC),Math.min(1,dt*.9)); cur.light.lerp(tmpC.set(target.light),Math.min(1,dt*.9));
- U.uTime.value=t; U.uWind.value=cur.wind+(curName==='wind'?Math.sin(t*.7)*.35+Math.sin(t*1.9)*.15:0); U.uSnowG.value=cur.snowG; U.uWet.value=cur.wet;
+ U.uTime.value=t%3600; U.uWind.value=cur.wind+(curName==='wind'?Math.sin(t*.7)*.35+Math.sin(t*1.9)*.15:0); U.uSnowG.value=cur.snowG; U.uWet.value=cur.wet;
  // sky
  const phi=THREE.MathUtils.degToRad(90-cur.elev), th=THREE.MathUtils.degToRad(140);
  sunDir.setFromSphericalCoords(1,phi,th);
@@ -584,9 +554,8 @@ function frame(fixed){
  hemi.intensity=cur.hemi+fl*3; hemi.color.copy(cur.light).lerp(tmpC.set(0xcfe4ff),.4); hemi.groundColor.set(0x8fae55); 
  scene.environmentIntensity=cur.env+fl*1.5;
  scene.fog.color.copy(cur.fogC).multiplyScalar(1+fl*.6); scene.fog.density=cur.fog;
- renderer.toneMappingExposure=cur.exp; grade.uniforms.uSat.value=cur.sat; grade.uniforms.uWarm.value=cur.warm; grade.uniforms.uLift.value=cur.lift;
- { const sp=sunDir.clone().multiplyScalar(5000).add(camera.position).project(camera); godrays.uniforms.uSun.value.set(sp.x*.5+.5,sp.y*.5+.5);
-   godrays.uniforms.uAmt.value=sp.z<1?Math.max(0,(cur.sun-1)/4.)*(1-cur.gray):0; } bloom.strength=cur.bloom;
+ renderer.toneMappingExposure=cur.exp;
+
  // particles
  const c=controls.target; const fd=cur.fog;
  rain.material.uniforms.uAmt.value=cur.rain; rain.material.uniforms.uC.value.copy(c); rain.material.uniforms.uCol.value.setRGB(.55,.6,.66).multiplyScalar(1+fl*2); rain.material.uniforms.uFogC.value.copy(cur.fogC); rain.material.uniforms.uFogD.value=fd; rain.visible=cur.rain>.01;
@@ -595,7 +564,7 @@ function frame(fixed){
  leaves.material.uniforms.uAmt.value=cur.leaves; leaves.material.uniforms.uFogC.value.copy(cur.fogC); leaves.material.uniforms.uFogD.value=fd; leaves.material.uniforms.uLight.value=.4+cur.sun*.25; leaves.visible=cur.leaves>.01;
  animMixKids(dt,t); animGirl(dt,t); animButterflies(t,cur.bfly);
  controls.update();
- composer.render();
+ if(!window.__noRender) renderer.render(scene,camera);
  
 }
 </script></body></html>
