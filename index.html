@@ -6,16 +6,18 @@
 <title>天气小课堂 · 3D 天气模拟</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#bfe3f7;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
-canvas{display:block}
-#ui{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;gap:12px;padding:10px 14px;background:rgba(255,255,255,.55);border-radius:28px;backdrop-filter:blur(6px);box-shadow:0 6px 24px rgba(0,60,120,.15)}
+canvas{display:block;position:fixed;left:0;top:0;z-index:0;filter:saturate(1.12)}
+#ui{z-index:1000;position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:flex;gap:12px;padding:10px 14px;background:rgba(255,255,255,.55);border-radius:28px;backdrop-filter:blur(6px);box-shadow:0 6px 24px rgba(0,60,120,.15)}
 #ui button{font-size:24px;font-weight:700;width:64px;height:64px;border:none;border-radius:50%;cursor:pointer;color:#35506b;background:#fff;box-shadow:0 3px 8px rgba(0,0,0,.12);transition:transform .2s,background .3s,color .3s}
 #ui button:hover{transform:translateY(-3px)}
 #ui button.on{background:#ffb938;color:#fff;transform:translateY(-3px) scale(1.06)}
 #ui button span{display:block;font-size:12px;font-weight:400;margin-top:-2px}
-#hint{position:fixed;top:14px;right:16px;color:#35506b;background:rgba(255,255,255,.6);padding:6px 12px;border-radius:14px;font-size:14px}
-#title{position:fixed;top:14px;left:16px;color:#fff;font-size:22px;font-weight:700;text-shadow:0 2px 6px rgba(0,50,100,.35)}
+#hint{z-index:1000;position:fixed;top:14px;right:16px;color:#35506b;background:rgba(255,255,255,.6);padding:6px 12px;border-radius:14px;font-size:14px}
+#title{z-index:1000;position:fixed;top:14px;left:16px;color:#fff;font-size:22px;font-weight:700;text-shadow:0 2px 6px rgba(0,50,100,.35)}
+#err{display:none;position:fixed;z-index:1001;top:50px;left:50%;transform:translateX(-50%);background:#fff3f3;color:#a33;padding:8px 14px;border-radius:10px;font-size:14px}
 </style>
-<script type="importmap">{"imports":{"three":"./lib/three.module.js","three/addons/":"./lib/addons/"}}</script>
+<meta http-equiv="Cache-Control" content="no-cache">
+<script type="importmap">{"imports":{"three":"./lib/three.module.js?v=186","three/addons/":"./lib/addons/"}}</script>
 </head>
 <body>
 <div id="title">天气小课堂</div>
@@ -28,6 +30,15 @@ canvas{display:block}
 <button data-w="fog">🌫️<span>雾</span></button>
 <button data-w="wind">🍃<span>风</span></button>
 </div>
-<script type="module" src="./main.js"></script>
+<div id="err"></div>
+<script>
+// UI works even before / without the 3D module: highlight + queue the choice
+window.__pendingWeather = null;
+document.querySelectorAll('#ui button').forEach(function(b){ b.addEventListener('click', function(){
+  document.querySelectorAll('#ui button').forEach(function(x){ x.classList.toggle('on', x===b); });
+  if (window.setWeather) window.setWeather(b.dataset.w); else window.__pendingWeather = b.dataset.w; }); });
+window.addEventListener('error', function(e){ var d=document.getElementById('err'); d.style.display='block'; d.textContent='3D 场景加载出错：' + (e.message||e); });
+</script>
+<script type="module" src="./main.js?v=1791957820"></script>
 </body>
 </html>

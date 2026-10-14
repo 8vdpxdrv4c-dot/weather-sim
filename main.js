@@ -10,7 +10,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 1.1;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
-renderer.domElement.style.filter = 'saturate(1.12)';
+renderer.debug.onShaderError = (gl, prog, vs, fs) => { console.warn('shader compile problem (continuing):', gl.getProgramInfoLog(prog)); };
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -128,7 +128,7 @@ function addCloud(x, y, z, sc, grey) {
   const s = new THREE.Sprite(m); s.position.set(x, y, z); s.scale.set(sc, sc * 0.5, 1); s.renderOrder = -5;
   s.userData = { grey, base: x }; scene.add(s); clouds.push(s);
 }
-for (let i = 0; i < 12; i++) { const a = -1.4 + i * 0.24 + rr(-0.06, 0.06); addCloud(Math.sin(a) * 380, rr(45, 120), -Math.cos(a) * 380, rr(140, 230), false); }
+for (let i = 0; i < 12; i++) { const a = -1.4 + i * 0.24 + rr(-0.06, 0.06); if (i % 2 || Math.abs(a - Math.atan2(SUN_DIR.x, -SUN_DIR.z)) < 0.35) continue; addCloud(Math.sin(a) * 380, rr(45, 120), -Math.cos(a) * 380, rr(140, 230), false); }
 for (let i = 0; i < 22; i++) { const a = -1.6 + i * 0.15; addCloud(Math.sin(a) * 340, rr(40, 150), -Math.cos(a) * 340, rr(180, 280), true); }
 
 // ---------- ground ----------
@@ -501,9 +501,9 @@ function setWeather(name, instant = false) {
   btns.forEach(b => b.classList.toggle('on', b.dataset.w === name));
   if (instant) for (const k in target) target[k] instanceof THREE.Color ? cur[k].copy(target[k]) : (cur[k] = target[k]);
 }
-btns.forEach(b => b.addEventListener('click', () => { startAudio(); setWeather(b.dataset.w); }));
+btns.forEach(b => b.addEventListener('click', () => startAudio()));
 window.setWeather = setWeather;
-setWeather(params.get('w') || 'sunny', true);
+setWeather(window.__pendingWeather || params.get('w') || 'sunny', !window.__pendingWeather);
 
 // ---------- loop ----------
 function onResize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
@@ -583,7 +583,8 @@ function update(dt) {
   if (audioOn) { const mix = MIX[currentName]; for (const n in AUD) { const tv = mix[n] || 0; const a = AUD[n]; a.volume = Math.min(1, Math.max(0, a.volume + (tv - a.volume) * Math.min(1, dt * 1.2))); } }
 }
 let last = performance.now();
-function frame() { const now = performance.now(); const dt = Math.min((now - last) / 1000, 0.05); last = now; controls.update(); update(dt); renderer.render(scene, camera); }
+function frame() { try { frameInner(); } catch (e) { if (!frame.warned) { console.warn('frame error', e); frame.warned = true; } } }
+function frameInner() { const now = performance.now(); const dt = Math.min((now - last) / 1000, 0.05); last = now; controls.update(); update(dt); renderer.render(scene, camera); }
 onResize();
 window.simulate = (sec, step = 1 / 30) => { for (let t = 0; t < sec; t += step) update(step); renderer.render(scene, camera); };
 window.renderOnce = () => renderer.render(scene, camera);
