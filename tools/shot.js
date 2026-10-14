@@ -12,5 +12,6 @@ const { chromium } = require('/workspace/wr_tools/node_modules/playwright');
  if(process.env.SEQ){ await p.evaluate(()=>window.setWeather(process?0:0,true)).catch(()=>{});
    for(const w of process.env.SEQ.split(',')){ await p.evaluate(w=>window.setWeather(w,true),w); await p.evaluate(()=>window.simulate(1));
    for(let i=0;i<6;i++){ await p.evaluate(()=>window.simulate(1/30,1/30)); await p.screenshot({path:`/tmp/seq_${w}_${i}.png`}); } } }
+ if(process.env.KIDS){ await p.evaluate(()=>{window.setWeather('sunny',true);kidAct(0,'sit');kidAct(1,'walk');kidAct(2,'look');kidAct(3,'walk');kidAct(4,'sit');window.simulate(3);}); await p.screenshot({path:'/workspace/weather-v2/screenshots/kids.png'}); console.log('kids'); }
  console.log('ERRS:\n'+errs.join('\n')); await b.close();
 })();

@@ -59,7 +59,7 @@ const PRESETS = {
   overcast: { skyTop: C(0x8f9cab), skyHor: C(0xd0d6dc), glow: 0.0, sun: 0.35, sunCol: C(0xe6ecf2), hemi: 1.45, fogCol: C(0xc7cdd3), fogD: 0.017, cloudCol: C(0xc9cfd6), cloud: 1, grey: 1, rain: 0, snow: 0, wind: 0.28, lines: 0, cover: 0, fly: 0.35, cloudSpd: 0.9, exp: 1.0 },
   rain:     { skyTop: C(0x6d7a88), skyHor: C(0xaab4be), glow: 0.0, sun: 0.2, sunCol: C(0xdde4ec), hemi: 1.3, fogCol: C(0xa9b3bd), fogD: 0.032, cloudCol: C(0x9aa3ad), cloud: 1, grey: 1, rain: 1, snow: 0, wind: 0.35, lines: 0, cover: 0, fly: 0, cloudSpd: 1.2, exp: 1.0 },
   snow:     { skyTop: C(0xa7b6c6), skyHor: C(0xe4e9ee), glow: 0.0, sun: 0.5, sunCol: C(0xf0f4ff), hemi: 1.6, fogCol: C(0xdde3ea), fogD: 0.03, cloudCol: C(0xe2e6ec), cloud: 1, grey: 1, rain: 0, snow: 1, wind: 0.2, lines: 0, cover: 1, fly: 0, cloudSpd: 0.6, exp: 1.0 },
-  fog:      { skyTop: C(0xd8dfe4), skyHor: C(0xe6eaed), glow: 0.12, sun: 0.7, sunCol: C(0xfff6e8), hemi: 1.55, fogCol: C(0xe0e5e8), fogD: 0.085, cloudCol: C(0xffffff), cloud: 0.15, grey: 0.3, rain: 0, snow: 0, wind: 0.05, lines: 0, cover: 0, fly: 0.25, cloudSpd: 0.3, exp: 1.0 },
+  fog:      { skyTop: C(0xd8dfe4), skyHor: C(0xe6eaed), glow: 0.12, sun: 0.7, sunCol: C(0xfff6e8), hemi: 1.55, fogCol: C(0xe0e5e8), fogD: 0.17, cloudCol: C(0xffffff), cloud: 0.15, grey: 0.3, rain: 0, snow: 0, wind: 0.05, lines: 0, cover: 0, fly: 0.25, cloudSpd: 0.3, exp: 1.0 },
   wind:     { skyTop: C(0x4a97e2), skyHor: C(0xc8e6f5), glow: 0.85, sun: 2.4, sunCol: C(0xfff0d6), hemi: 1.5, fogCol: C(0xd3e9f2), fogD: 0.012, cloudCol: C(0xffffff), cloud: 1, grey: 0.15, rain: 0, snow: 0, wind: 1.0, lines: 1, cover: 0, fly: 0, cloudSpd: 6.0, exp: 1.0 },
 };
 const cur = {}; for (const k in PRESETS.sunny) cur[k] = PRESETS.sunny[k] instanceof THREE.Color ? PRESETS.sunny[k].clone() : PRESETS.sunny[k];
@@ -247,11 +247,16 @@ function makeKid(o) {
   const k = new THREE.Group();
   const body = new THREE.Group(); k.add(body);
   const legCol = o.dress ? SKIN : (o.legs || JEANS);
+  const legs = [];
   for (const sx of [-1, 1]) {
+    const nBefore = body.children.length;
     const leg = cap(0.068, 0.2, legCol); leg.position.set(sx * 0.08, 0.2, 0); body.add(leg);
     if (o.dress) { const sock = cap(0.07, 0.04, 0xffffff); sock.position.set(sx * 0.08, 0.1, 0); body.add(sock); }
     const shoe = sph(0.09, o.shoes); shoe.scale.set(0.9, 0.6, 1.35); shoe.position.set(sx * 0.085, 0.045, 0.035); body.add(shoe);
     const sole = sph(0.09, 0xffffff); sole.scale.set(0.92, 0.25, 1.37); sole.position.set(sx * 0.085, 0.02, 0.035); body.add(sole);
+    const piv = new THREE.Group(); piv.position.set(sx * 0.08, 0.32, 0);
+    for (const c of body.children.slice(nBefore)) { c.position.x -= sx * 0.08; c.position.y -= 0.32; piv.add(c); }
+    body.add(piv); legs.push(piv);
   }
   const torso = new THREE.Group(); torso.position.y = 0.36; body.add(torso);
   const tors = cap(0.165, 0.16, o.shirt); tors.scale.set(1, 1, 0.82); tors.position.y = 0.17; torso.add(tors);
@@ -280,7 +285,7 @@ function makeKid(o) {
     if (o.dress) sleeve.material = dressMat;
     const hand = sph(0.052, SKIN, 16, 12); hand.position.y = -0.25; piv.add(hand);
     piv.rotation.z = sx * (o.raise ? 2.3 : 0.35); piv.rotation.x = o.raise ? -0.25 : 0;
-    piv.userData = { base: piv.rotation.z, sx }; arms.push(piv);
+    piv.userData = { base: piv.rotation.z, baseX: piv.rotation.x, sx }; arms.push(piv);
   }
   // head
   const head = new THREE.Group(); head.position.y = 0.95; body.add(head);
@@ -303,7 +308,7 @@ function makeKid(o) {
   if (o.braids) for (const sx of [-1, 1]) for (let j = 0; j < 4; j++) { const b = sph(0.055 - j * 0.004, HAIR, 12, 10); b.position.set(sx * (0.25 + j * 0.01), -0.12 - j * 0.085, -0.08); head.add(b); if (j === 0) { const bow = sph(0.03, 0xff7aa8, 10, 8); bow.position.set(sx * 0.27, -0.06, -0.06); head.add(bow); } }
   if (o.pigtails) for (const sx of [-1, 1]) { const p = sph(0.085, HAIR, 16, 12); p.position.set(sx * 0.3, 0.08, -0.06); p.scale.set(0.8, 1.2, 0.8); p.rotation.z = sx * -0.5; head.add(p); const bow = sph(0.032, 0xff7aa8, 10, 8); bow.position.set(sx * 0.26, 0.16, -0.03); head.add(bow); }
   k.traverse(m => { if (m.isMesh) m.castShadow = false; });
-  k.userData = { torso, head, arms, ph: rnd() * 6 };
+  k.userData = { torso, head, arms, legs, body, ph: rnd() * 6 };
   return k;
 }
 const kidDefs = [
@@ -313,7 +318,17 @@ const kidDefs = [
   { x: -0.75, z: -0.3, ry: 0.15, shirt: 0xffa040, shoes: 0x4a6fb0, pack: 0x5b8fd8, boy: true, raise: true },
   { x: 1.0, z: -0.6, ry: -0.15, shirt: 0xffd23a, shoes: 0xff9fbf, pack: 0xff8a5a, braids: true, raise: true },
 ];
-const kids = kidDefs.map(d => { const k = makeKid(d); k.position.set(d.x, hgt(d.x, d.z) - 0.01, d.z); k.rotation.y = d.ry; k.scale.setScalar(1.18); scene.add(k); blob(d.x, d.z + 0.05, 0.38, 1.1); return k; });
+const kids = kidDefs.map(d => { const k = makeKid(d); k.position.set(d.x, hgt(d.x, d.z) - 0.01, d.z); k.rotation.y = d.ry; k.scale.setScalar(1.18); scene.add(k);
+  Object.assign(k.userData, { blob: blob(d.x, d.z + 0.05, 0.38, 1.1), home: new THREE.Vector2(d.x, d.z), homeRy: d.ry, heading: d.ry, act: 'idle', timer: 2 + Math.random() * 4, w: { walk: 0, sit: 0, look: 0 }, goal: null, walkPh: 0 });
+  return k; });
+const ACTS = ['idle', 'idle', 'walk', 'walk', 'walk', 'sit', 'sit', 'look', 'look'];
+function pickGoal(kd) { const u = kd.userData;
+  for (let tries = 0; tries < 12; tries++) { const a = Math.random() * 6.283, r = 0.3 + Math.random() * 0.8; const g = new THREE.Vector2(u.home.x + Math.cos(a) * r, u.home.y + Math.sin(a) * r * 0.7);
+    if (kids.every(o => o === kd || (Math.hypot(o.position.x - g.x, o.position.z - g.y) > 0.75 && (!o.userData.goal || o.userData.goal.distanceTo(g) > 0.75)))) return g; }
+  return null; }
+function setAct(kd, act) { const u = kd.userData; u.act = act; u.timer = 6 + Math.random() * 6; u.goal = act === 'walk' ? pickGoal(kd) : null; if (act === 'walk' && !u.goal) u.act = 'idle'; }
+window.kidAct = (i, a) => setAct(kids[i], a);
+const angLerp = (a, b, m) => { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + Math.max(-m, Math.min(m, d)); };
 
 // ---------- butterflies ----------
 const wingTex = (a, b) => canvasTex(64, 64, (g) => { g.fillStyle = a; g.beginPath(); g.ellipse(32, 22, 26, 20, -0.3, 0, 7); g.fill(); g.beginPath(); g.ellipse(26, 46, 16, 14, 0.4, 0, 7); g.fill(); g.fillStyle = b; g.beginPath(); g.ellipse(36, 20, 12, 9, -0.3, 0, 7); g.fill(); g.strokeStyle = '#3a2a1a'; g.lineWidth = 3; g.beginPath(); g.ellipse(32, 22, 26, 20, -0.3, 0, 7); g.stroke(); });
@@ -351,24 +366,7 @@ const rainU = { uTime: timeU, uOpacity: { value: 0 }, uSlant: { value: new THREE
       #include <colorspace_fragment>
     }` }));
   m.frustumCulled = false; scene.add(m);
-  // splashes
-  const S = 2500; const sg = new THREE.BufferGeometry(); const sp = new Float32Array(S * 3); const sa = new Float32Array(S);
-  for (let i = 0; i < S; i++) { sp.set([rr(-10, 10), 0, rr(-10, 5.5)], i * 3); sa[i] = rnd(); }
-  sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('aPh', new THREE.BufferAttribute(sa, 1));
-  const pts = new THREE.Points(sg, new THREE.ShaderMaterial({ uniforms: { ...rainU, uScale: scaleU }, transparent: true, depthWrite: false,
-    vertexShader: `attribute float aPh; uniform float uTime, uScale; varying float vLife; ${GLSL_H}
-    void main(){ float cyc = uTime*1.7 + aPh*7.0; float life = fract(cyc); float k = floor(cyc);
-      vec2 xz = position.xz + vec2(sin(k*12.9+aPh*78.2), cos(k*7.3+aPh*31.7))*1.5;
-      vec3 p = vec3(xz.x, hgt(xz)+0.03+0.12*life*(1.0-life)*4.0*0.4, xz.y);
-      vec4 mv = viewMatrix*vec4(p,1.0); vLife = life; gl_PointSize = (0.05+0.12*life)*uScale/(-mv.z); gl_Position = projectionMatrix*mv; }`,
-    fragmentShader: `uniform float uOpacity; varying float vLife;
-    void main(){ vec2 q = gl_PointCoord*2.0-1.0; q.y*=1.8; float d = length(q); if(d>1.0) discard;
-      float ring = smoothstep(0.45,0.75,d)*smoothstep(1.0,0.82,d) + (1.0-smoothstep(0.0,0.3,d))*(1.0-vLife);
-      gl_FragColor = vec4(0.95,0.97,1.0, ring*(1.0-vLife)*uOpacity*0.95);
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
-    }` }));
-  pts.frustumCulled = false; scene.add(pts);
+
 }
 
 
@@ -401,7 +399,7 @@ const snowU = { uTime: timeU, uOpacity: { value: 0 }, uWind: windU, uScale: scal
 // ---------- wind lines (shader ribbons, BotW style) ----------
 const windLineU = { uTime: timeU, uOpacity: { value: 0 }, ...fogUniforms };
 {
-  const SEG = 120, N = 70; const g = new THREE.InstancedBufferGeometry();
+  const SEG = 120, N = 22; const g = new THREE.InstancedBufferGeometry();
   const pos = [], idx = [];
   for (let i = 0; i <= SEG; i++) { pos.push(i / SEG, -1, 0, i / SEG, 1, 0); if (i < SEG) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); } }
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
@@ -474,9 +472,33 @@ function update(dt) {
   for (const c of clouds) { const span = 900; let x = c.userData.base + cloudOff; x = ((x + span / 2) % span + span) % span - span / 2; c.position.x = x;
     c.material.color.copy(cur.cloudCol); c.material.opacity = (c.userData.grey ? cur.grey : 1) * cur.cloud; }
   for (const s of swayers) { const ph = s.userData.ph; s.rotation.z = Math.sin(simTime * 0.7 + ph) * 0.015 - cur.wind * (0.05 + 0.03 * Math.sin(simTime * 1.6 + ph)); s.rotation.x = Math.sin(simTime * 0.53 + ph) * 0.01 * (1 + cur.wind * 2); }
-  for (const kd of kids) { const u = kd.userData, t = simTime + u.ph;
-    u.torso.scale.y = 1 + Math.sin(t * 1.6) * 0.012; u.head.rotation.z = Math.sin(t * 0.6) * 0.04; u.head.position.y = 0.95 + Math.sin(t * 1.6) * 0.004;
-    u.arms.forEach((a, i) => { a.rotation.z = a.userData.base + a.userData.sx * Math.sin(t * 1.2 + i * 1.3) * 0.12; }); }
+  for (const kd of kids) { const u = kd.userData, t = simTime + u.ph, w = u.w;
+    u.timer -= dt; if (u.timer <= 0 || (u.act === 'walk' && !u.goal)) setAct(kd, ACTS[Math.floor(Math.random() * ACTS.length)]);
+    const ease = 1 - Math.exp(-dt * 1.5);
+    for (const key of ['walk', 'sit', 'look']) w[key] += ((u.act === key ? 1 : 0) - w[key]) * ease;
+    // walking (only once fully standing)
+    let moving = 0;
+    if (u.act === 'walk' && u.goal && w.sit < 0.05) {
+      const dx = u.goal.x - kd.position.x, dz = u.goal.y - kd.position.z, dist = Math.hypot(dx, dz);
+      if (dist < 0.06) { u.goal = null; u.act = 'idle'; u.timer = 3 + Math.random() * 4; }
+      else { let want = Math.atan2(dx, dz);
+        for (const o of kids) if (o !== kd) { const ox = kd.position.x - o.position.x, oz = kd.position.z - o.position.z, od = Math.hypot(ox, oz); if (od < 0.7) want = angLerp(want, Math.atan2(ox, oz), 0.6 * (0.7 - od) / 0.7 * 3); }
+        u.heading = angLerp(u.heading, want, dt * 1.4);
+        const facing = Math.max(0, Math.cos(want - u.heading)); const sp = 0.28 * w.walk * facing; moving = sp;
+        kd.position.x += Math.sin(u.heading) * sp * dt; kd.position.z += Math.cos(u.heading) * sp * dt; }
+    } else u.heading = angLerp(u.heading, u.homeRy, dt * 0.8);
+    kd.rotation.y = u.heading; kd.position.y = hgt(kd.position.x, kd.position.z) - 0.01;
+    u.blob.position.set(kd.position.x, hgt(kd.position.x, kd.position.z) + 0.03, kd.position.z + 0.05);
+    u.walkPh += dt * moving * 22; const wc = Math.sin(u.walkPh), ww = Math.min(1, moving / 0.2);
+    const ws = w.sit, wl = w.look;
+    u.legs.forEach((l, i) => { l.rotation.x = (i ? 1 : -1) * wc * 0.45 * ww - 1.45 * ws; l.rotation.z = (i ? 1 : -1) * 0.12 * ws; });
+    u.body.position.y = -0.255 * ws + Math.abs(Math.cos(u.walkPh)) * 0.012 * ww;
+    u.torso.scale.y = 1 + Math.sin(t * 1.6) * 0.012; u.torso.rotation.x = -0.12 * wl - 0.05 * ws;
+    u.head.rotation.x = -0.42 * wl; u.head.rotation.z = Math.sin(t * 0.6) * 0.04 * (1 - wl); u.head.position.y = 0.95 + Math.sin(t * 1.6) * 0.004;
+    const down = Math.min(1, Math.max(ww, ws, w.walk));
+    u.arms.forEach((a, i) => { const sx = a.userData.sx; const zr = a.userData.base * (1 - down) + sx * 0.3 * down;
+      a.rotation.z = zr + sx * Math.sin(t * 1.2 + i * 1.3) * 0.1 * (1 - down);
+      a.rotation.x = (a.userData.baseX || 0) * (1 - down) + (i ? -1 : 1) * wc * 0.4 * ww - 0.5 * ws; }); }
   for (const f of flies) { const u = f.userData, t = simTime * u.sp + u.ph;
     const vis = cur.fly; f.visible = vis > 0.02; f.scale.setScalar(Math.max(vis, 0.001));
     const x = u.cx + Math.sin(t) * u.ax, z = u.cz + Math.sin(t * 1.7) * u.az, y = u.cy + Math.sin(t * 2.3) * 0.25;
