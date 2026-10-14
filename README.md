@@ -1,4 +1,7 @@
-# 天气模拟器 · 写实版
-Serve this folder with any static server, e.g. `python3 -m http.server 8000`, and open http://localhost:8000/ in Chrome. (Opening via file:// will not work because of ES modules and fetch.)
-Buttons: 晴/阴/雨/雪/雾/风. Sound starts on the first click. Drag to orbit, scroll to zoom. "画质" switches between high quality (with GTAO ambient occlusion) and a faster mode. If the frame rate stays low, the page switches to the faster mode by itself.
-tools/ holds the Blender scripts used to build the models and the Playwright screenshot script.
+# 天气小课堂 · 3D 天气模拟 v2
+Open `index.html` via any static server (or GitHub Pages). All files local; three.js r186 (0.186.1) vendored in `lib/` (ES modules + importmap).
+Buttons: 晴 阴 雨 雪 雾 风 — smooth ~2 s transitions with crossfaded ambient audio (audio starts after the first click, browser autoplay rule).
+- Rain: 14k instanced camera-facing streak quads (GPU-animated, wind slant) + 2.5k GPU splash point sprites on the terrain.
+- Snow: 10k GPU point sprites, soft round flakes with low-frequency turbulence; ground/grass/tree snow tint.
+- Wind: 70 instanced ribbons; vertex shader builds curved paths (some with loops), fragment shader draws a moving tapered gradient streak (BotW-style); grass/tree sway increases.
+- Scene: shader gradient sky + sun glow (no noise), canvas-texture sprite clouds drifting slowly, 94k instanced shader grass blades with distance fade, 3.2k instanced flowers, procedural trees, 5 procedural chibi children, butterflies, soft blob shadows (no shadow maps, no post-processing).
