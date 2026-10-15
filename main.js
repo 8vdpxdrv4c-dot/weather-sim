@@ -385,15 +385,15 @@ kids.forEach((kd, i) => {
   const handle = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 12, Math.PI), M(0x8a6a50)); handle.rotation.z = Math.PI; handle.position.set(0.04, 0, 0); g.add(handle);
   g.traverse(m => { if (m.isMesh) m.castShadow = true; }); g.visible = false; kd.add(g); kd.userData.umb = { g, can };
 });
-const ACTS_ALL = ['idle', 'walk', 'walk', 'walk', 'walk', 'sit', 'lie', 'lie', 'look', 'look'];
-const ACTS_DRY = ['idle', 'walk', 'walk', 'walk', 'walk', 'sit', 'look', 'look'];
+const ACTS_ALL = ['idle', 'idle', 'walk', 'walk', 'walk', 'walk', 'look', 'look'];
+const ACTS_DRY = ACTS_ALL; // sitting / lying removed in all weathers
 const noLie = () => currentName === 'rain' || currentName === 'snow';
 const ACTS = () => noLie() ? ACTS_DRY : ACTS_ALL;
 function pickGoal(kd) { const u = kd.userData;
   for (let tries = 0; tries < 12; tries++) { const a = Math.random() * 6.283, r = 0.6 + Math.random() * 1.4; const g = new THREE.Vector2(THREE.MathUtils.clamp(u.home.x + Math.cos(a) * r, -2.6, 2.6), THREE.MathUtils.clamp(u.home.y + Math.sin(a) * r, -2.8, 2.9));
     if (kids.every(o => o === kd || (Math.hypot(o.position.x - g.x, o.position.z - g.y) > 0.75 && (!o.userData.goal || o.userData.goal.distanceTo(g) > 0.75)))) return g; }
   return null; }
-function setAct(kd, act) { const u = kd.userData; if (act === 'lie' && noLie()) act = 'sit';
+function setAct(kd, act) { const u = kd.userData; if (act === 'lie' || act === 'sit') act = 'idle';
   u.act = act; u.timer = act === 'lie' ? 12 + Math.random() * 6 : 6 + Math.random() * 6; u.goal = act === 'walk' ? pickGoal(kd) : null; if (act === 'walk' && !u.goal) u.act = 'idle'; }
 window.kidAct = (i, a) => setAct(kids[i], a);
 const angLerp = (a, b, m) => { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + Math.max(-m, Math.min(m, d)); };
@@ -507,7 +507,18 @@ const windLineU = { uTime: timeU, uOpacity: { value: 0 }, ...fogUniforms };
 const AUD = {}; for (const n of ['sunny', 'kids', 'overcast', 'rain', 'snow', 'wind']) { const a = new Audio(`./audio/${n}.mp3`); a.loop = true; a.volume = 0; a.preload = 'auto'; AUD[n] = a; }
 const MIX = { sunny: { sunny: 0.5, kids: 0.18 }, overcast: { overcast: 0.35, sunny: 0.08 }, rain: { rain: 0.8 }, snow: { snow: 0.35 }, fog: { overcast: 0.15, sunny: 0.12 }, wind: { wind: 0.7, sunny: 0.1 } };
 let audioOn = false;
-function startAudio() { if (audioOn) return; audioOn = true; for (const a of Object.values(AUD)) a.play().catch(() => {}); }
+const VOICE = { sunny: ['sunny_1', 'sunny_2'], overcast: ['overcast_1', 'overcast_2'], rain: ['rain_1', 'rain_2'], snow: ['snow_1', 'snow_2'], fog: ['fog_1', 'fog_2'], wind: ['wind_1', 'wind_2'] };
+const VA = {}; for (const k of [...Object.values(VOICE).flat(), 'laugh']) { const a = new Audio(`./audio/voice/${k}.mp3`); a.preload = 'auto'; a.volume = 1; VA[k] = a; }
+let voiceBusyUntil = 0, nextChatter = 30, duck = 1;
+function playVoice(name, withLaugh) {
+  if (!audioOn) return; const v = VOICE[name]; if (!v) return;
+  const a = VA[v[Math.floor(Math.random() * v.length)]]; a.currentTime = 0; a.play().catch(() => {});
+  voiceBusyUntil = simTime + (a.duration || 2.5) + 0.3;
+  if (withLaugh) a.onended = () => { a.onended = null; const l = VA.laugh; l.currentTime = 0; l.volume = 0.8; l.play().catch(() => {}); voiceBusyUntil = simTime + (l.duration || 5); };
+  else a.onended = null;
+  nextChatter = simTime + 30 + Math.random() * 25;
+}
+function startAudio() { if (audioOn) return; audioOn = true; for (const a of Object.values(AUD)) a.play().catch(() => {}); for (const a of Object.values(VA)) a.load(); }
 addEventListener('pointerdown', startAudio, { once: false });
 
 // ---------- UI ----------
@@ -517,7 +528,7 @@ function setWeather(name, instant = false) {
   btns.forEach(b => b.classList.toggle('on', b.dataset.w === name));
   if (instant) for (const k in target) target[k] instanceof THREE.Color ? cur[k].copy(target[k]) : (cur[k] = target[k]);
 }
-btns.forEach(b => b.addEventListener('click', () => startAudio()));
+btns.forEach(b => b.addEventListener('click', () => { startAudio(); setTimeout(() => playVoice(b.dataset.w, b.dataset.w === 'sunny'), 350); }));
 window.setWeather = setWeather;
 setWeather(window.__pendingWeather || params.get('w') || 'sunny', !window.__pendingWeather);
 
@@ -563,7 +574,7 @@ function update(dt) {
         else { u.act = 'idle'; u.goal = null; }
       } else if (u.chasing !== undefined) { u.chasing = undefined; u.timer = 1; u.act = 'idle'; u.goal = null; }
     }
-    if (noLie() && (u.act === 'lie' || (u.w.lie || 0) > 0.15)) { u.act = 'sit'; u.timer = Math.max(u.timer, 4); }
+    if (u.act === 'lie' || u.act === 'sit') { u.act = 'idle'; u.timer = Math.max(u.timer, 3); }
     u.timer -= dt; if (u.timer <= 0 || (u.act === 'walk' && !u.goal)) { const pool = ACTS(); setAct(kd, pool[Math.floor(Math.random() * pool.length)]); }
     const ease = 1 - Math.exp(-dt * 1.5);
     w.lie ??= 0;
@@ -615,7 +626,9 @@ function update(dt) {
     const px = f.position.x, pz = f.position.z;
     f.position.set(x, y, z); if (Math.hypot(x - px, z - pz) > 1e-4) f.rotation.y = angLerp(f.rotation.y, Math.atan2(x - px, z - pz), 0.15);
     const flap = Math.sin(simTime * 9 + u.ph * 3) * 0.9; u.L.rotation.z = flap; u.R.rotation.z = -flap; f.rotation.z = 0; }
-  if (audioOn) { const mix = MIX[currentName]; for (const n in AUD) { const tv = mix[n] || 0; const a = AUD[n]; a.volume = Math.min(1, Math.max(0, a.volume + (tv - a.volume) * Math.min(1, dt * 1.2))); } }
+  if (audioOn && simTime > nextChatter && simTime > voiceBusyUntil) playVoice(currentName, currentName === 'sunny' && Math.random() < 0.5);
+  duck += ((simTime < voiceBusyUntil ? 0.45 : 1) - duck) * Math.min(1, dt * 3);
+  if (audioOn) { const mix = MIX[currentName]; for (const n in AUD) { const tv = (mix[n] || 0) * duck; const a = AUD[n]; a.volume = Math.min(1, Math.max(0, a.volume + (tv - a.volume) * Math.min(1, dt * 1.2))); } }
 }
 let last = performance.now();
 function frame() { try { frameInner(); } catch (e) { if (!frame.warned) { console.warn('frame error', e); frame.warned = true; } } }
