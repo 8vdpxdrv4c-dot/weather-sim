@@ -30,6 +30,17 @@ const SUN_DIR = new THREE.Vector3(0.368, 0.191, -0.910).normalize();
 const LIGHT_DIR = new THREE.Vector3(0.291, 0.629, -0.720).normalize();
 
 // shared terrain height (identical in GLSL)
+// ---------- meadow path (shared JS/GLSL) ----------
+const sstep = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+function pathCX(z) { return 0.35 * Math.sin(z * 0.7) + 1.4 * Math.sin(z * 0.15 - 0.2) * sstep(2, 8, Math.abs(z - 0.3)); }
+function pathHW(z) { return 0.85 + 1.55 * Math.exp(-Math.pow((z - 0.3) / 2.8, 2)); }
+function pathU(x, z) { return Math.abs(x - pathCX(z)) / pathHW(z); } // 0 = centre, 1 = edge
+const GLSL_PATH = `
+float pathCX(float z){ return 0.35*sin(z*0.7) + 1.4*sin(z*0.15-0.2)*smoothstep(2.0,8.0,abs(z-0.3)); }
+float pathHW(float z){ return 0.85 + 1.55*exp(-pow((z-0.3)/2.8,2.0)); }
+float pathU(vec2 p){ return abs(p.x - pathCX(p.y)) / pathHW(p.y); }`;
+const KID_Z = [-2.8, 2.9];
+function clampToPath(v, margin = 0.38) { v.y = THREE.MathUtils.clamp(v.y, KID_Z[0], KID_Z[1]); const c = pathCX(v.y), h = Math.max(0.1, pathHW(v.y) - margin); v.x = THREE.MathUtils.clamp(v.x, c - h, c + h); return v; }
 function hgt(x, z) {
   let h = 0.5 * Math.sin(x * 0.09 + 1.0) * Math.sin(z * 0.08) + 0.35 * Math.sin(x * 0.17 - z * 0.11) + 0.25 * Math.sin(x * 0.05 + z * 0.04 + 2.0);
   const d = Math.hypot(x, z);
@@ -155,9 +166,25 @@ const snowLayer = (() => {
     lay[i] = 0.26 + bump * 0.8; p.setY(i, hgt(x, z) + lay[i]); }
   g.computeVertexNormals(); g.setAttribute('aLayer', new THREE.BufferAttribute(lay, 1));
   const m = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xc8ced8, emissiveIntensity: 0.42 });
-  m.onBeforeCompile = (sh) => { sh.uniforms.uCov = snowLayerU; sh.uniforms.uKids = kidPosU; sh.vertexShader = 'attribute float aLayer; uniform float uCov; uniform vec2 uKids[5];\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n float kd = 99.0; for(int i=0;i<5;i++) kd = min(kd, distance(transformed.xz, uKids[i]));\n float keep = uCov * mix(0.15, 1.0, smoothstep(0.25, 0.8, kd));\n transformed.y -= aLayer * (1.0 - keep) + 0.03*(1.0-uCov);'); };
+  m.onBeforeCompile = (sh) => { sh.uniforms.uCov = snowLayerU; sh.uniforms.uKids = kidPosU; sh.vertexShader = 'attribute float aLayer; uniform float uCov; uniform vec2 uKids[5];\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n float pu = abs(transformed.x - (0.35*sin(transformed.z*0.7) + 1.4*sin(transformed.z*0.15-0.2)*smoothstep(2.0,8.0,abs(transformed.z-0.3)))) / (0.85 + 1.55*exp(-pow((transformed.z-0.3)/2.8,2.0)));\n float keep = uCov * mix(0.32, 1.0, smoothstep(0.8, 1.2, pu));\n transformed.y -= aLayer * (1.0 - keep) + 0.03*(1.0-uCov);'); };
   const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.visible = false; scene.add(mesh); return mesh; })();
 
+// ---------- path ribbon (dirt with pebbles, soft edges) ----------
+{
+  const zs = [], N = 13; for (let z = -34; z <= 8.01; z += 0.15) zs.push(z);
+  const pos = [], col = [], idx = []; const c = new THREE.Color(), dirt = C(0xcfae78), dark = C(0xa9875a), stone = C(0xe8dcc6);
+  zs.forEach((z, j) => { const cx = pathCX(z), hw = pathHW(z);
+    for (let i = 0; i < N; i++) { const u = -1.35 + 2.7 * i / (N - 1); const x = cx + u * hw;
+      const n = 0.5 + 0.5 * Math.sin(x * 7.3 + Math.sin(z * 5.1) * 2) * Math.sin(z * 6.7 + x * 1.3);
+      const peb = Math.max(0, Math.sin(x * 23.0 + z * 3.1) * Math.sin(z * 19.0 - x * 2.7)) ** 6;
+      c.copy(dirt).lerp(dark, n * 0.45).lerp(stone, peb * 0.8).lerp(C(0x9dbf4a), sstep(0.7, 1.25, Math.abs(u)) * 0.6);
+      const a = 1 - sstep(0.8, 1.32, Math.abs(u));
+      pos.push(x, hgt(x, z) + 0.012, z); col.push(c.r, c.g, c.b, a);
+      if (j > 0 && i > 0) { const k = j * N + i; idx.push(k - N - 1, k - 1, k - N, k - N, k - 1, k); } } });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }));
+  m.receiveShadow = true; m.renderOrder = 1; scene.add(m);
+}
 // ---------- grass (instanced shader blades) ----------
 const kidHU = { value: [1, 1, 1, 1, 1] }, shadowU = { value: 1 };
 const windU = { value: 0.1 }, timeU = { value: 0 }, kidPosU = { value: [0,1,2,3,4].map(() => new THREE.Vector2(99, 99)) }, buryU = { value: 0 };
@@ -177,7 +204,8 @@ const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new 
   const mat = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     uniforms: { uTime: timeU, uWind: windU, uSnow: snowCover, uKids: kidPosU, uKidH: kidHU, uShadow: shadowU, uSunXZ: { value: new THREE.Vector2(-LIGHT_DIR.x, -LIGHT_DIR.z).normalize() }, uTanE: { value: LIGHT_DIR.y / Math.hypot(LIGHT_DIR.x, LIGHT_DIR.z) }, uBury: buryU, uBase: { value: C(0x4f9a1c) }, uTip: { value: C(0xb6e04e) }, ...lightU, ...fogUniforms },
-    vertexShader: `attribute vec4 aOff; attribute float aVar; uniform float uTime,uWind,uBury,uKidH[5],uShadow,uTanE; uniform vec2 uKids[5],uSunXZ; varying float vSh; varying float vT,vVar,vDist; ${GLSL_H}
+    vertexShader: `${GLSL_PATH}
+    attribute vec4 aOff; attribute float aVar; uniform float uTime,uWind,uBury,uKidH[5],uShadow,uTanE; uniform vec2 uKids[5],uSunXZ; varying float vSh; varying float vT,vVar,vDist; ${GLSL_H}
     void main(){ vec2 b = aOff.xy; float gy = hgt(b); vec3 root = vec3(b.x,gy,b.y);
       float d = distance(root, cameraPosition); float fade = 1.0 - smoothstep(24.0,36.0,d);
       float s = sin(aOff.z), c = cos(aOff.z); float hs = aOff.w*fade*(0.85+0.3*aVar);
@@ -187,7 +215,7 @@ const lightU = { uAmb: { value: 1 }, uSunI: { value: 1 }, uSunCol: { value: new 
         float wdt = 0.36 + 0.1*step(1.6, uKidH[i]) * smoothstep(0.6, 1.0, al / L) * 2.0;
         sh = max(sh, smoothstep(-0.1, 0.25, al) * (1.0 - smoothstep(L*0.8, L*1.05, al)) * (1.0 - smoothstep(wdt*0.6, wdt, pp))); }
       vSh = sh * uShadow;
-      hs *= (1.0 - 0.55*sh*uShadow) * mix(0.3, 1.0, smoothstep(0.35, 0.9, kd)) * (1.0 - 0.9*uBury);
+      float pu = pathU(b); hs *= (1.0 - 0.55*sh*uShadow) * mix(0.12, 1.0, smoothstep(0.85, 1.25, pu)) * (1.0 - 0.9*uBury);
       vec3 lp = vec3(position.x*c, position.y*hs, position.x*s);
       float t = position.y; float bend = t*t*hs;
       float gust = 0.5+0.5*sin(uTime*1.3 - b.x*0.35 + b.y*0.12);
@@ -217,8 +245,8 @@ window.__flowers = [];
   const stemGeo = new THREE.CylinderGeometry(0.008, 0.01, 1, 4); stemGeo.translate(0, -0.5, 0);
   const pal = [0xff8fb8, 0xff7a2e, 0xffd23a, 0xffffff, 0xffffff, 0x7c9cff, 0xc79bff, 0xff5a5a, 0xffe066].map(C);
   const flowers = [];
-  for (let i = 0; i < 3200; i++) { const x = rr(-30, 30), z = rr(-28, 5.5); flowers.push([x, z, rr(0.035, 0.07), rr(0.2, 0.38)]); }
-  for (let i = 0; i < 26; i++) { const x = rr(-3.4, 3.4), z = rr(3.4, 5.2); if (Math.abs(x) < 0.5) continue; flowers.push([x, z, rr(0.09, 0.17), rr(0.3, 0.5)]); }
+  for (let i = 0; i < 3200; i++) { const x = rr(-30, 30), z = rr(-28, 5.5); if (pathU(x, z) < 1.25) continue; flowers.push([x, z, rr(0.035, 0.07), rr(0.2, 0.38)]); }
+  for (let i = 0; i < 26; i++) { const x = rr(-3.4, 3.4), z = rr(3.4, 5.2); if (pathU(x, z) < 1.3) continue; flowers.push([x, z, rr(0.09, 0.17), rr(0.3, 0.5)]); }
   const n = flowers.length;
   const mk = (geo, mat) => { const m = new THREE.InstancedMesh(geo, mat, n); scene.add(m); window.__flowers.push(m); return m; };
   const flowerMeshes = [];
@@ -363,11 +391,11 @@ function makeKid(o) {
   return k;
 }
 const kidDefs = [
-  { x: -1.15, z: 2.3, ry: 0.25, shirt: 0xffd84a, collar: 0xffe78a, shoes: 0xff7a3a, pack: 0xa77be0, packFlap: 0xc49cf2, braids: true, raise: false, wave: 0 }, // yellow polo (braids in image front-left)
-  { x: 0.15, z: 2.6, ry: 0.0, shirt: 0xa9cff0, sleeve: 0xa9cff0, overalls: true, legs: DENIM, shoes: 0x7a8aa0, pack: 0xf3a63a, boy: true, raise: true },
+  { x: -0.85, z: 2.3, ry: 0.25, shirt: 0xffd84a, collar: 0xffe78a, shoes: 0xff7a3a, pack: 0xa77be0, packFlap: 0xc49cf2, braids: true, raise: false, wave: 0 }, // yellow polo (braids in image front-left)
+  { x: 0.35, z: 2.6, ry: 0.0, shirt: 0xa9cff0, sleeve: 0xa9cff0, overalls: true, legs: DENIM, shoes: 0x7a8aa0, pack: 0xf3a63a, boy: true, raise: true },
   { x: 1.45, z: 2.2, ry: -0.3, shirt: 0xf7a6c4, dress: true, shoes: 0xff9fbf, pack: 0x7dcfa8, pigtails: true, bob: true, raise: false, wave: 1 },
-  { x: -0.75, z: -0.3, ry: 0.15, shirt: 0xffa040, shoes: 0x4a6fb0, pack: 0x5b8fd8, boy: true, raise: true },
-  { x: 1.0, z: -0.6, ry: -0.15, shirt: 0xffd23a, shoes: 0xff9fbf, pack: 0xff8a5a, braids: true, raise: true },
+  { x: -0.85, z: -1.4, ry: 0.15, shirt: 0xffa040, shoes: 0x4a6fb0, pack: 0x5b8fd8, boy: true, raise: true },
+  { x: 0.55, z: -2.1, ry: -0.15, shirt: 0xffd23a, shoes: 0xff9fbf, pack: 0xff8a5a, braids: true, raise: true },
 ];
 const kids = kidDefs.map(d => { const k = makeKid(d); k.position.set(d.x, hgt(d.x, d.z) - 0.01, d.z); k.rotation.y = d.ry; k.scale.setScalar(1.18); scene.add(k);
   Object.assign(k.userData, { blob: blob(d.x, d.z + 0.05, 0.38, 1.1), home: new THREE.Vector2(d.x, d.z), homeRy: d.ry, heading: d.ry, act: 'idle', timer: 2 + Math.random() * 4, w: { walk: 0, sit: 0, look: 0 }, goal: null, walkPh: 0 });
@@ -390,7 +418,7 @@ const ACTS_DRY = ACTS_ALL; // sitting / lying removed in all weathers
 const noLie = () => currentName === 'rain' || currentName === 'snow';
 const ACTS = () => noLie() ? ACTS_DRY : ACTS_ALL;
 function pickGoal(kd) { const u = kd.userData;
-  for (let tries = 0; tries < 12; tries++) { const a = Math.random() * 6.283, r = 0.6 + Math.random() * 1.4; const g = new THREE.Vector2(THREE.MathUtils.clamp(u.home.x + Math.cos(a) * r, -2.6, 2.6), THREE.MathUtils.clamp(u.home.y + Math.sin(a) * r, -2.8, 2.9));
+  for (let tries = 0; tries < 12; tries++) { const a = Math.random() * 6.283, r = 0.6 + Math.random() * 1.4; const g = clampToPath(new THREE.Vector2(u.home.x + Math.cos(a) * r, u.home.y + Math.sin(a) * r));
     if (kids.every(o => o === kd || (Math.hypot(o.position.x - g.x, o.position.z - g.y) > 0.75 && (!o.userData.goal || o.userData.goal.distanceTo(g) > 0.75)))) return g; }
   return null; }
 function setAct(kd, act) { const u = kd.userData; if (act === 'lie' || act === 'sit') act = 'idle';
@@ -570,7 +598,7 @@ function update(dt) {
         const bf = flies[0].position; const vx = kd.position.x - bf.x, vz = kd.position.z - bf.z, vd = Math.hypot(vx, vz) || 1;
         if (u.act === 'sit' || u.act === 'lie' || u.act === 'look') u.act = 'idle';
         u.timer = 99; u.chasing = !u.chasePause;
-        if (u.chasing && vd > 0.55) { u.act = 'walk'; u.goal = (u.goal || new THREE.Vector2()).set(bf.x + vx / vd * 0.5, bf.z + vz / vd * 0.5); }
+        if (u.chasing && vd > 0.55) { u.act = 'walk'; u.goal = clampToPath((u.goal || new THREE.Vector2()).set(bf.x + vx / vd * 0.5, bf.z + vz / vd * 0.5)); }
         else { u.act = 'idle'; u.goal = null; }
       } else if (u.chasing !== undefined) { u.chasing = undefined; u.timer = 1; u.act = 'idle'; u.goal = null; }
     }
@@ -592,6 +620,7 @@ function update(dt) {
         u.heading = angLerp(u.heading, want, dt * (u.chasing ? 2.0 : 1.4));
         const facing = Math.max(0, Math.cos(want - u.heading)); const sp = (u.chasing ? 0.52 : 0.28) * w.walk * facing; moving = sp;
         kd.position.x += Math.sin(u.heading) * sp * dt; kd.position.z += Math.cos(u.heading) * sp * dt; }
+      { const v = clampToPath(new THREE.Vector2(kd.position.x, kd.position.z), 0.3); kd.position.x = v.x; kd.position.z = v.y; }
     } else if (isChaser && u.chasing !== undefined) { const bf = flies[0].position; u.heading = angLerp(u.heading, Math.atan2(bf.x - kd.position.x, bf.z - kd.position.z), dt * 1.5); }
     else u.heading = angLerp(u.heading, u.homeRy, dt * 0.8);
     kd.rotation.y = u.heading; kd.position.y = hgt(kd.position.x, kd.position.z) - 0.01;
@@ -621,7 +650,7 @@ function update(dt) {
     const vis = chaseFly ? Math.max(cur.fly, chaseW) : cur.fly; f.visible = vis > 0.02; f.scale.setScalar(Math.max(vis, 0.001) * (chaseFly ? 1.6 : 1));
     let x = u.cx + Math.sin(t) * u.ax, z = u.cz + Math.sin(t * 1.7) * u.az, y = u.cy + Math.sin(t * 2.3) * 0.25;
     if (chaseFly) { const tc = simTime;
-      const cx = 2.3 * Math.sin(tc * 0.17) + 0.4 * Math.sin(tc * 0.53), cz = 0.2 + 2.2 * Math.sin(tc * 0.23 + 1.0), cy = 1.1 + 0.18 * Math.sin(tc * 1.9) + 0.08 * Math.sin(tc * 3.1);
+      const cz = 0.2 + 2.4 * Math.sin(tc * 0.23 + 1.0), cx = pathCX(cz) + (pathHW(cz) - 0.3) * Math.sin(tc * 0.17 + 0.4 * Math.sin(tc * 0.53)), cy = 1.1 + 0.18 * Math.sin(tc * 1.9) + 0.08 * Math.sin(tc * 3.1);
       x = THREE.MathUtils.lerp(x, cx, chaseW); z = THREE.MathUtils.lerp(z, cz, chaseW); y = THREE.MathUtils.lerp(y, cy, chaseW); }
     const px = f.position.x, pz = f.position.z;
     f.position.set(x, y, z); if (Math.hypot(x - px, z - pz) > 1e-4) f.rotation.y = angLerp(f.rotation.y, Math.atan2(x - px, z - pz), 0.15);
