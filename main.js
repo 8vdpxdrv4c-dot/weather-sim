@@ -355,7 +355,7 @@ function makeKid(o) {
   const hair = sph(0.292, o.hair || HAIR, 40, 28); hair.position.set(0, 0.05, -0.045); hair.scale.set(1.02, 0.97, 1); head.add(hair);
   for (let i = -2; i <= 2; i++) { const b = sph(0.085, o.hair || HAIR, 16, 12); b.position.copy(onHead(0.74 - Math.abs(i) * 0.04, i * 0.3, 0.255)); b.scale.set(1.2, 0.6, 0.7); b.lookAt(b.position.clone().multiplyScalar(2)); head.add(b); }
   if (o.boy) { const tuft = sph(0.06, HAIR, 12, 10); tuft.position.set(0.02, 0.33, 0.02); tuft.scale.set(0.6, 1, 0.6); tuft.rotation.z = -0.4; head.add(tuft); }
-  if (o.bob) { const back = sph(0.27, HAIR, 32, 20); back.position.set(0, -0.08, -0.08); back.scale.set(1.1, 0.9, 0.95); head.add(back); }
+  if (o.bob) { const back = sph(0.27, HAIR, 32, 20); back.position.set(0, -0.03, -0.13); back.scale.set(0.96, 0.85, 0.8); head.add(back); }
   if (o.braids) for (const sx of [-1, 1]) for (let j = 0; j < 4; j++) { const b = sph(0.055 - j * 0.004, HAIR, 12, 10); b.position.set(sx * (0.25 + j * 0.01), -0.12 - j * 0.085, -0.08); head.add(b); if (j === 0) { const bow = sph(0.03, 0xff7aa8, 10, 8); bow.position.set(sx * 0.27, -0.06, -0.06); head.add(bow); } }
   if (o.pigtails) for (const sx of [-1, 1]) { const p = sph(0.085, HAIR, 16, 12); p.position.set(sx * 0.3, 0.08, -0.06); p.scale.set(0.8, 1.2, 0.8); p.rotation.z = sx * -0.5; head.add(p); const bow = sph(0.032, 0xff7aa8, 10, 8); bow.position.set(sx * 0.26, 0.16, -0.03); head.add(bow); }
   k.traverse(m => { if (m.isMesh && !m.material.transparent) m.castShadow = true; });
@@ -623,7 +623,8 @@ function frameInner() { const now = performance.now(); const dt = Math.min((now 
 onResize();
 window.simulate = (sec, step = 1 / 30) => { for (let t = 0; t < sec; t += step) update(step); renderer.render(scene, camera); };
 window.renderOnce = () => renderer.render(scene, camera);
-if (params.has('shot')) { renderer.render(scene, camera); window.__ready = true; }
+if (params.has('shot')) { window.__dbg = { kids, camera, controls, scene, renderer }; renderer.render(scene, camera); window.__ready = true; }
 else { renderer.setAnimationLoop(frame); window.__ready = true; }
 
 
+window.THREE_V = THREE.Vector3;
