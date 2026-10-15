@@ -73,7 +73,7 @@ const PRESETS = {
   sunny:    { skyTop: C(0x3f93e6), skyHor: C(0xc4e6f7), glow: 1.0, sun: 2.6, sunCol: C(0xfff0d0), hemi: 1.5, fogCol: C(0xd3e9f2), fogD: 0.011, cloudCol: C(0xffffff), cloud: 1, grey: 0, rain: 0, snow: 0, wind: 0.12, lines: 0, cover: 0, fly: 1, cloudSpd: 0.6, exp: 1.0 },
   overcast: { skyTop: C(0x8f9cab), skyHor: C(0xd0d6dc), glow: 0.0, sun: 0.35, sunCol: C(0xe6ecf2), hemi: 1.45, fogCol: C(0xc7cdd3), fogD: 0.017, cloudCol: C(0xc9cfd6), cloud: 1, grey: 1, rain: 0, snow: 0, wind: 0.28, lines: 0, cover: 0, fly: 0.35, cloudSpd: 0.9, exp: 1.0 },
   rain:     { skyTop: C(0x6d7a88), skyHor: C(0xaab4be), glow: 0.0, sun: 0.2, sunCol: C(0xdde4ec), hemi: 1.3, fogCol: C(0xa9b3bd), fogD: 0.032, cloudCol: C(0x9aa3ad), cloud: 1, grey: 1, rain: 1, snow: 0, wind: 0.35, lines: 0, cover: 0, fly: 0, cloudSpd: 1.2, exp: 1.0 },
-  snow:     { skyTop: C(0xa7b6c6), skyHor: C(0xe4e9ee), glow: 0.0, sun: 0.5, sunCol: C(0xf0f4ff), hemi: 1.6, fogCol: C(0xdde3ea), fogD: 0.03, cloudCol: C(0xe2e6ec), cloud: 1, grey: 1, rain: 0, snow: 1, wind: 0.2, lines: 0, cover: 1, fly: 0, cloudSpd: 0.6, exp: 1.0 },
+  snow:     { skyTop: C(0xb4bfca), skyHor: C(0xeef0f2), glow: 0.0, sun: 0.6, sunCol: C(0xfffcf6), hemi: 1.75, fogCol: C(0xeceef0), fogD: 0.03, cloudCol: C(0xe2e6ec), cloud: 1, grey: 1, rain: 0, snow: 1, wind: 0.2, lines: 0, cover: 1, fly: 0, cloudSpd: 0.6, exp: 1.0 },
   fog:      { skyTop: C(0xd8dfe4), skyHor: C(0xe6eaed), glow: 0.12, sun: 0.7, sunCol: C(0xfff6e8), hemi: 1.55, fogCol: C(0xe0e5e8), fogD: 0.17, cloudCol: C(0xffffff), cloud: 0.15, grey: 0.3, rain: 0, snow: 0, wind: 0.05, lines: 0, cover: 0, fly: 0.25, cloudSpd: 0.3, exp: 1.0 },
   wind:     { skyTop: C(0x4a97e2), skyHor: C(0xc8e6f5), glow: 0.85, sun: 2.4, sunCol: C(0xfff0d6), hemi: 1.5, fogCol: C(0xd3e9f2), fogD: 0.012, cloudCol: C(0xffffff), cloud: 1, grey: 0.15, rain: 0, snow: 0, wind: 1.0, lines: 1, cover: 0, fly: 0, cloudSpd: 6.0, exp: 1.0 },
 };
@@ -165,7 +165,7 @@ const snowLayer = (() => {
     const bump = 0.07 * Math.sin(x * 1.3 + Math.sin(z * 0.9) * 1.5) * Math.sin(z * 1.1 + x * 0.3) + 0.04 * Math.sin(x * 3.1 + z * 2.3) + 0.05 * Math.sin(x * 0.45 - z * 0.6);
     lay[i] = 0.26 + bump * 0.8; p.setY(i, hgt(x, z) + lay[i]); }
   g.computeVertexNormals(); g.setAttribute('aLayer', new THREE.BufferAttribute(lay, 1));
-  const m = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xc8ced8, emissiveIntensity: 0.42 });
+  const m = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xfcfbf8, emissiveIntensity: 0.64 }); window.__snowMat = m;
   m.onBeforeCompile = (sh) => { sh.uniforms.uCov = snowLayerU; sh.uniforms.uKids = kidPosU; sh.vertexShader = 'attribute float aLayer; uniform float uCov; uniform vec2 uKids[5];\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n float pu = abs(transformed.x - (0.35*sin(transformed.z*0.7) + 1.4*sin(transformed.z*0.15-0.2)*smoothstep(2.0,8.0,abs(transformed.z-0.3)))) / (0.85 + 1.55*exp(-pow((transformed.z-0.3)/2.8,2.0)));\n float keep = uCov * mix(0.32, 1.0, smoothstep(0.8, 1.2, pu));\n transformed.y -= aLayer * (1.0 - keep) + 0.03*(1.0-uCov);'); };
   const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.visible = false; scene.add(mesh); return mesh; })();
 
@@ -288,20 +288,41 @@ const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8a5a36 });
 const leafMats = [0x7cc63a, 0x93d24a, 0x6ab832, 0xa8dc58, 0x86cc40].map(h => new THREE.MeshLambertMaterial({ color: h }));
 const leafBase = leafMats.map(m => m.color.clone());
 const leafSnowU = { value: 0 };
+trunkMat.onBeforeCompile = (sh) => { sh.uniforms.uLS = leafSnowU;
+  sh.vertexShader = 'varying vec3 vWN;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vWN = normalize(mat3(modelMatrix) * objectNormal);');
+  sh.fragmentShader = 'varying vec3 vWN; uniform float uLS;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), uLS * smoothstep(0.05, 0.45, vWN.y));'); };
 leafMats.forEach(m => { m.onBeforeCompile = (sh) => { sh.uniforms.uLS = leafSnowU;
   sh.vertexShader = 'varying vec3 vWN;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vWN = normalize(mat3(modelMatrix) * objectNormal);');
   sh.fragmentShader = 'varying vec3 vWN; uniform float uLS;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.97,0.98,1.0), uLS * smoothstep(0.15, 0.55, vWN.y));'); }; });
 const blobGeo = new THREE.IcosahedronGeometry(1, 3);
+function mergeGeos(list) { const pos = [], nor = [];
+  for (const g0 of list) { const g = g0.index ? g0.toNonIndexed() : g0; pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); return g; }
+function branchGeo(seedA, detail) { let sd = seedA; const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  const parts = []; const up = new THREE.Vector3(0, 1, 0);
+  const limb = (start, dir, len, r0, r1, depth) => { const g = new THREE.CylinderGeometry(r1, r0, len, detail ? 6 : 4, 1); g.translate(0, len / 2, 0);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, dir)); g.translate(start.x, start.y, start.z); parts.push(g);
+    if (depth > 0) { const end = start.clone().addScaledVector(dir, len);
+      for (let k = 0; k < 2; k++) { const d2 = dir.clone().add(new THREE.Vector3(r() - 0.5, r() * 0.4, r() - 0.5).multiplyScalar(1.4)).normalize();
+        limb(start.clone().addScaledVector(dir, len * (0.55 + 0.4 * r())), d2, len * 0.55, r1 * 1.05, r1 * 0.45, depth - 1); } } };
+  const n = detail ? 6 : 4;
+  for (let i = 0; i < n; i++) { const a = i / n * 6.283 + r() * 0.6; const dir = new THREE.Vector3(Math.cos(a) * 0.8, 0.9 + r() * 0.5, Math.sin(a) * 0.8).normalize();
+    limb(new THREE.Vector3(0, 2.3 + r() * 0.8, 0), dir, 1.3 + r() * 0.6, 0.09, 0.04, detail ? 2 : 1); }
+  limb(new THREE.Vector3(0, 3.0, 0), new THREE.Vector3(0.05, 1, 0).normalize(), 1.4, 0.12, 0.04, 1);
+  return mergeGeos(parts); }
+const BR_GEOS = [branchGeo(11, true), branchGeo(29, true), branchGeo(47, false), branchGeo(83, false)];
+const leafLossU = { value: 0 };
 function makeTree(x, z, s, detail = true) {
   const g = new THREE.Group(); g.position.set(x, hgt(x, z) - 0.05, z); g.scale.setScalar(s);
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 3.2, 10), trunkMat); trunk.position.y = 1.6; g.add(trunk);
   if (detail) for (const [a, l] of [[0.7, 1.3], [-0.6, 1.1]]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.11, l, 7), trunkMat); b.position.set(Math.sin(a) * 0.4, 2.5, 0); b.rotation.z = -a; g.add(b); }
+  const br = new THREE.Mesh(BR_GEOS[(detail ? 0 : 2) + Math.floor(rnd() * 2)], trunkMat); br.rotation.y = rnd() * 6.28; g.add(br);
   const crown = new THREE.Group(); crown.position.y = 3.1; g.add(crown);
   const n = detail ? 16 : 7;
   for (let i = 0; i < n; i++) {
     const a = rnd() * Math.PI * 2, r = rr(0.3, 1.6), y = rr(-0.3, 1.5) * (1 - r / 2.6);
     const m = new THREE.Mesh(blobGeo, leafMats[Math.floor(rnd() * leafMats.length)]);
-    m.position.set(Math.cos(a) * r, y + 0.4, Math.sin(a) * r * 0.85); m.scale.setScalar(rr(0.8, 1.25) * (1.25 - r * 0.2)); crown.add(m);
+    m.position.set(Math.cos(a) * r, y + 0.4, Math.sin(a) * r * 0.85); m.scale.setScalar(rr(0.8, 1.25) * (1.25 - r * 0.2)); m.userData.base = m.scale.x; m.userData.d = rnd(); crown.add(m);
   }
   crown.userData.ph = rnd() * 6; swayers.push(crown); scene.add(g);
   if (detail) blob(x, z, 2.4 * s);
@@ -576,7 +597,9 @@ function update(dt) {
   lightU.uAmb.value = cur.hemi; lightU.uSunI.value = cur.sun; lightU.uSunCol.value.copy(cur.sunCol);
   windU.value = cur.wind; snowCover.value = cur.cover;
   accum += ((target.cover || 0) - accum) * (1 - Math.exp(-dt * (target.cover ? 0.45 : 0.9)));
-  snowLayerU.value = accum; snowLayer.visible = accum > 0.005; for (const f of window.__flowers) f.position.y = -0.32 * accum; buryU.value = accum; leafSnowU.value = accum;
+  snowLayerU.value = accum; snowLayer.visible = accum > 0.005; hemi.color.setHex(0xdcefff).lerp(C(0xfffefa), accum);
+  for (const cr of swayers) for (const m of cr.children) { const k = THREE.MathUtils.clamp((1 - accum * 1.15) * 1.4 - m.userData.d * 0.4, 0, 1); const e = k * k * (3 - 2 * k);
+    m.visible = e > 0.01; m.scale.setScalar(m.userData.base * Math.max(e, 0.01)); m.position.y = (m.userData.y0 ??= m.position.y) - (1 - e) * 0.5; } for (const f of window.__flowers) f.position.y = -0.32 * accum; buryU.value = accum; leafSnowU.value = accum;
   kids.forEach((kd, i) => { kidPosU.value[i].set(kd.position.x, kd.position.z); const w = kd.userData.w;
     kidHU.value[i] = (1.45 - 0.55 * (w.sit || 0) - 0.55 * (w.lie || 0)) * 1.0 + 0.45 * THREE.MathUtils.smoothstep(cur.rain, 0.05, 0.6) * (1 - (w.lie || 0)); });
   const shStr = THREE.MathUtils.clamp((cur.sun - 0.4) / 2.0, 0, 1) * (1 - THREE.MathUtils.clamp(cur.fogD / 0.06, 0, 1) * 0.8);
